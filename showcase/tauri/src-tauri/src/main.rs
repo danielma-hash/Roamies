@@ -1360,6 +1360,11 @@ fn login_item(app: &AppHandle, set: Option<bool>) {
 /// Checks the signed update feed (latest.json on the newest GitHub release). With `install`, downloads,
 /// verifies the signature, swaps the app in place and restarts. Progress goes to the sidecar as update_status.
 fn update(app: &AppHandle, install: bool) {
+    // An upstream installer would replace the custom speech engines.
+    if cfg!(target_os = "macos") {
+        to_sidecar(app, &json!({ "type": "update_status", "state": "none", "custom": true }));
+        return;
+    }
     use tauri_plugin_updater::UpdaterExt;
     let app = app.clone();
     // Linux: only an AppImage can swap itself in place. A copy from a .deb or .rpm is told about the new version

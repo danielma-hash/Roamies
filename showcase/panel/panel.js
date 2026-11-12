@@ -113,7 +113,7 @@
     const per100 = (perM) => `$${(perM * 0.02).toFixed(2)}`;
     const promo = c.promo && Date.now() < Date.parse(c.promo.until)
       ? ` (${per100(c.promo.perM)} until ${new Date(Date.parse(c.promo.until) - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'America/Los_Angeles' })})` : '';
-    return `$${c.perM} per million characters: about ${per100(c.perM)} per 100 replies${promo}. Billed to your Fish Audio account.`;
+    return `$${c.perM} per million characters: about ${per100(c.perM)} per 100 replies${promo}. Billed to your Cartesia account.`;
   };
   const where = () => (state?.os === 'mac' ? 'your Keychain' : state?.os === 'win' ? 'Windows, encrypted for your account' : state?.os === 'linux' ? 'your keyring' : 'this computer');
 
@@ -468,22 +468,30 @@
     return [
       group('Spoken replies', 'Hear me as well as read me.', null,
         picks('Replies', [['text', 'Text only'], ['voice', 'Voice and text']], state.replies, (x) => {
-          if (x === 'voice' && !state.fishKey) { ui.key = 'fish'; render('key-fish'); note('Add a Fish Audio key to hear me talk.'); return; }
+          if (x === 'voice' && !state.fishKey) { ui.key = 'fish'; render('key-fish'); note('Add a Cartesia key to hear me talk.'); return; }
           act(`replies:${x}`);
         }, 'replies'),
-        state.replies === 'voice' && state.fishModels?.length ? [
-          el('p', { className: 'sub', textContent: 'Voice model' }),
-          picks('Voice model', state.fishModels.map((c) => [c.id, c.name]), state.fishModel, (x) => act(`fishmodel:${x}`), 'fishmodel',
-            Object.fromEntries(state.fishModels.map((c) => [c.id, `${WHY_LONG[c.id] ?? ''} ${price(c)}`.trim()]))),
-          el('p', { className: `why${state.fishFree ? ' late' : ''}`, textContent: state.fishFree ? "No credit left, so it's on Fish's free tier" : WHY[state.fishModel] ?? '' }),
+        state.replies === 'voice' && state.cartesiaVoices?.length ? [
+          el('p', { className: 'sub', textContent: 'קולות גבריים' }),
+          picks('קולות גבריים', state.cartesiaVoices.slice(0, 5), state.cartesiaVoice, (x) => act('cartesiavoice:' + x), 'cartesiavoice-male'),
+          el('p', { className: 'sub', textContent: 'קולות נשיים' }),
+          picks('קולות נשיים', state.cartesiaVoices.slice(5), state.cartesiaVoice, (x) => act('cartesiavoice:' + x), 'cartesiavoice-female'),
+          btn('האזנה לדוגמה', () => act('voice_preview'), { disabled: !state.fishKey }),
+          el('p', { className: 'why', textContent: 'Cartesia Sonic 3.6 · Hebrew' }),
         ] : null,
         el('div', { className: 'setting' },
-          el('span', {}, 'Fish Audio key', el('small', { textContent: state.fishKey ? `Saved in ${where()}` : 'Needed for spoken replies' })),
+          el('span', {}, 'Cartesia key', el('small', { textContent: state.fishKey ? `Saved in ${where()}` : 'Needed for spoken replies' })),
           el('span', { className: 'row-btns' },
-            link(ui.key === 'fish' ? 'Cancel' : state.fishKey ? 'Change' : 'Add', () => { ui.key = ui.key === 'fish' ? null : 'fish'; render(ui.key ? 'key-fish' : 'addkey:fish'); }, { k: 'addkey:fish', aria: state.fishKey ? 'Change the Fish Audio key' : 'Add a Fish Audio key' }),
-            state.fishKey && ui.key !== 'fish' ? armed('Remove', 'Confirm', 'fishkey-remove', 'fishkey_remove', 'Remove the Fish Audio key') : null)),
-        keyForm('fish', 'Fish Audio', (key) => send({ type: 'panel_fishkey', key }))),
-      v ? group('Talking to me', 'Speak instead of typing.', null,
+            link(ui.key === 'fish' ? 'Cancel' : state.fishKey ? 'Change' : 'Add', () => { ui.key = ui.key === 'fish' ? null : 'fish'; render(ui.key ? 'key-fish' : 'addkey:fish'); }, { k: 'addkey:fish', aria: state.fishKey ? 'Change the Cartesia key' : 'Add a Cartesia key' }),
+            state.fishKey && ui.key !== 'fish' ? armed('Remove', 'Confirm', 'fishkey-remove', 'fishkey_remove', 'Remove the Cartesia key') : null)),
+        keyForm('fish', 'Cartesia', (key) => send({ type: 'panel_fishkey', key }))),
+      v ? group('Talking to me', 'Soniox · Hebrew and English', null,
+        el('div', { className: 'setting' },
+          el('span', {}, 'Soniox API key', el('small', { textContent: state.sonioxKey ? 'Saved in ' + where() : 'Needed for speech recognition' })),
+          el('span', { className: 'row-btns' },
+            link(ui.key === 'soniox' ? 'Cancel' : state.sonioxKey ? 'Change' : 'Add', () => { ui.key = ui.key === 'soniox' ? null : 'soniox'; render(); }),
+            state.sonioxKey && ui.key !== 'soniox' ? armed('Remove', 'Confirm', 'sonioxkey-remove', 'sonioxkey_remove', 'Remove the Soniox key') : null)),
+        keyForm('soniox', 'Soniox', (key) => send({ type: 'panel_sonioxkey', key })),
         toggle('Voice control', v.download
           ? (v.download.status === 'downloading' ? `Downloading the voice model… ${v.download.pct}%` : v.download.status === 'error' ? 'The download failed' : `Needs a ${v.download.size} download`)
           : v.keys ? `Hold ${v.keys} to talk` : 'Press your talk shortcut to talk', v.on, () => act('voice'), 'voice'),
@@ -501,7 +509,6 @@
         toggle('Sound effects', null, state.sound, () => act('sound'), 'sound'),
         toggle('Allow file edits and commands', 'Change files and run commands', state.actions, () => act('actions'), 'actions'),
         state.voice ? toggle('Auto-listen', state.voice.on ? 'Mic opens when I ask you something.' : 'Needs Voice control on', state.voice.autoListen, () => act('autolisten'), 'autolisten') : null,
-        state.voice?.mac ? toggle('Wake word', state.voice.on ? 'Say “Hey Roamies” to talk. Mic stays on.' : 'Needs Voice control on', state.voice.wakeWord, () => act('wakeword'), 'wakeword') : null,
         state.login ? toggle('Open at login', null, state.login.on, () => act('login'), 'login') : null),
       b ? group('Shortcuts', 'Add these as custom shortcuts in your keyboard settings, with any keys you like.', null,
         BIND_ROWS.filter(([k]) => b[k]).map(([k, label]) => el('div', { className: 'setting' },
