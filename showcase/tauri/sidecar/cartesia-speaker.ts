@@ -1,4 +1,5 @@
 import { speakableHebrew } from './hebrew.js';
+import { SpeechPreparer } from './speech-preparer.js';
 import type { SpeakerOptions, SpokenTurn } from './voice.types.js';
 
 export const CARTESIA_API = 'https://api.cartesia.ai';
@@ -27,6 +28,7 @@ export class CartesiaSpeaker {
   private seq = 0;
   private current: SpokenTurn | undefined;
   private readonly fetchImpl: typeof fetch;
+  private readonly preparer = new SpeechPreparer();
 
   constructor(private readonly options: SpeakerOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -77,40 +79,41 @@ export class CartesiaSpeaker {
       say: (text) => {
         if (done || ended) return;
         // Fish Audio's performance cues aren't Cartesia's text syntax.
-        const transcript = speakableHebrew(text);
-        if (!transcript) return;
-        chars += transcript.length;
-        queue = queue.then(async () => {
-          if (done) return;
-          const res = await this.fetchImpl(`${CARTESIA_API}/tts/bytes`, {
-            method: 'POST', headers: this.headers(key),
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
-            body: JSON.stringify({ model_id: this.model, transcript, voice, language: 'he',
-              output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: RATE } }),
-          });
-          if (!res.ok || !res.body) {
-            await res.body?.cancel();
-            throw new CartesiaError(`Cartesia HTTP ${res.status}`);
-          }
-          let carry = Buffer.alloc(0);
-          for await (const chunk of res.body) {
-            if (done) break;
-            const bytes = Buffer.concat([carry, Buffer.from(chunk)]), even = bytes.length - bytes.length % 2;
-            carry = bytes.subarray(even);
-            if (even) {
-              if (!heard) this.options.log?.('speech_first_audio', { id, model: this.model });
-              heard = true;
-              this.options.emit({ kind: 'speech', id, rate: RATE, pcm: bytes.subarray(0, even).toString('base64') });
+        const segments = this.preparer.segment(speakableHebrew(text));
+        for (const { transcript, language } of segments) {
+          chars += transcript.length;
+          queue = queue.then(async () => {
+            if (done) return;
+            const res = await this.fetchImpl(`${CARTESIA_API}/tts/bytes`, {
+              method: 'POST', headers: this.headers(key),
+              signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
+              body: JSON.stringify({ model_id: this.model, transcript, voice, language,
+                output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: RATE } }),
+            });
+            if (!res.ok || !res.body) {
+              await res.body?.cancel();
+              throw new CartesiaError(`Cartesia HTTP ${res.status}`);
             }
-          }
-          if (carry.length) throw new CartesiaError('Cartesia returned an incomplete PCM sample');
-        }).catch((error: unknown) => {
-          if (done) return;
-          controller.abort();
-          this.options.log?.('speech_error', { id, message: error instanceof Error ? error.message : 'Cartesia failed' });
-          finish();
-          this.options.onProblem?.('Cartesia');
-        });
+            let carry = Buffer.alloc(0);
+            for await (const chunk of res.body) {
+              if (done) break;
+              const bytes = Buffer.concat([carry, Buffer.from(chunk)]), even = bytes.length - bytes.length % 2;
+              carry = bytes.subarray(even);
+              if (even) {
+                if (!heard) this.options.log?.('speech_first_audio', { id, model: this.model });
+                heard = true;
+                this.options.emit({ kind: 'speech', id, rate: RATE, pcm: bytes.subarray(0, even).toString('base64') });
+              }
+            }
+            if (carry.length) throw new CartesiaError('Cartesia returned an incomplete PCM sample');
+          }).catch((error: unknown) => {
+            if (done) return;
+            controller.abort();
+            this.options.log?.('speech_error', { id, message: error instanceof Error ? error.message : 'Cartesia failed' });
+            finish();
+            this.options.onProblem?.('Cartesia');
+          });
+        }
       },
       beat: () => false,
       end: () => { if (done || ended) return; ended = true; void queue.then(finish); },

@@ -1,3 +1,8 @@
+export interface SpeechSegment {
+  readonly language: 'he' | 'en';
+  transcript: string;
+}
+
 export interface SpeechMessage {
   readonly kind: 'speech';
   readonly id?: string;
