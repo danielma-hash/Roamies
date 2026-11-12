@@ -519,7 +519,7 @@
       $('fish-save').textContent = replies.saving ? 'Checking…' : 'Save';
       // Talking hands-free (needs voice): open the mic for an answer, and on macOS, wake on "Hey Roamies".
       $('talk-rows').hidden = !state?.voice;
-      $('wake-row').hidden = !isMac();
+      $('wake-row').hidden = true;
       $('autolisten-switch').setAttribute('aria-checked', String(!!state?.autoListen));
       $('wake-switch').setAttribute('aria-checked', String(!!state?.wakeWord));
       nav();

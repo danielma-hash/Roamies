@@ -235,20 +235,27 @@
   }
   // Words typing themselves in; the last couple land white.
   function typed(c, str, x, y, font, color, u, o = {}) {
-    str = String(str ?? '');
+    str = window.ROAMIES_HE?.(String(str ?? '')) ?? String(str ?? '');
     c.save(); c.font = font; c.textBaseline = o.baseline || 'alphabetic'; c.textAlign = 'left';
     const full = c.measureText(str).width, x0 = o.anchor === 'middle' ? x - full / 2 : o.anchor === 'end' ? x - full : x;
     // With reduced motion the words are simply there.
     const n = reduced() ? str.length : Math.floor(str.length * clamp(u, 0, 1));
     // Still typing in: keep repainting until it's all there (a card stopped after 1.5 s, freezing long text mid-word).
     if (n < str.length) touch(0.1);
+    if (/[\u0590-\u05ff]/.test(str)) {
+      c.direction = 'rtl'; c.textAlign = 'right'; c.fillStyle = color;
+      if (o.rim) { c.lineWidth = o.rim; c.strokeStyle = EDGE; c.strokeText(str.slice(0, n), x0 + full, y); }
+      c.fillText(str.slice(0, n), x0 + full, y);
+      c.restore();
+      return full;
+    }
     if (o.rim) { c.lineWidth = o.rim; c.strokeStyle = EDGE; c.lineJoin = 'round'; c.strokeText(str.slice(0, n), x0, y); }
     if (n >= str.length || o.land === false) { c.fillStyle = color; c.fillText(str.slice(0, n), x0, y); }
     else { const head = str.slice(0, Math.max(0, n - 2)); c.fillStyle = color; c.fillText(head, x0, y); c.fillStyle = '#ffffff'; c.fillText(str.slice(head.length, n), x0 + c.measureText(head).width, y); }
     c.restore();
     return full;
   }
-  const textW = (str, font) => { meas.font = font; return meas.measureText(String(str)).width; };
+  const textW = (str, font) => { meas.font = font; return meas.measureText(window.ROAMIES_HE?.(String(str)) ?? String(str)).width; };
   // Cut to fit maxW px with an ellipsis (by measured width, not a character count).
   function ellipsize(str, maxW, font) {
     str = String(str ?? '');
@@ -264,6 +271,7 @@
   // Lines of at most w px. A word wider than a line (a link, a long name) is broken across lines; past max rows the
   // last one ends in an ellipsis.
   function wrapRows(str, w, font, max = Infinity) {
+    str = window.ROAMIES_HE?.(String(str ?? '')) ?? str;
     meas.font = font;
     const fits = (t) => meas.measureText(t).width <= w, rows = [];
     for (const para of String(str ?? '').split('\n')) {
@@ -289,7 +297,9 @@
     const total = rows.reduce((s, r) => s + r.length + 1, 0);
     let left = reduced() ? total : Math.floor(total * clamp(u, 0, 1));
     if (left < total) touch(0.1);
-    rows.forEach((r, i) => { const k = Math.min(r.length, left); left -= r.length + 1; if (k > 0) typed(c, r.slice(0, k), x, y + i * lh, font, color, 1); });
+    const rtl = rows.some((r) => /[\u0590-\u05ff]/.test(r));
+    const edge = rtl ? x + Math.max(0, ...rows.map((r) => textW(r, font))) : x;
+    rows.forEach((r, i) => { const k = Math.min(r.length, left); left -= r.length + 1; if (k > 0) typed(c, r.slice(0, k), edge, y + i * lh, font, color, 1, rtl ? { anchor: 'end' } : {}); });
   }
 
   // ---------------------------------------------------------------- the cursor: the real Sidekick in cursor form
@@ -533,9 +543,9 @@
       } });
       await rest(x + w, y + h);
     },
-    async copy(m) { sfx('tick'); leaveAfter(toast('Copied to your clipboard', m.text), 1800); },
+    async copy(m) { sfx('tick'); leaveAfter(toast("הועתק ללוח", m.text), 1800); },
     async open(m) { let h = m.url; try { h = new URL(m.url).hostname.replace(/^www\./, ''); } catch {} sfx('whoosh'); leaveAfter(toast(`Opening ${h}`, m.url, { spin: true }), 1800); },
-    async handoff(m) { sfx('toolstart'); leaveAfter(toast('Handed off', m.task || m.text || m.label || '', { spin: true }), 2200); },
+    async handoff(m) { sfx('toolstart'); leaveAfter(toast("הועבר", m.task || m.text || m.label || '', { spin: true }), 2200); },
     async button(m) {
       const k = 1.15, w = Math.round(textW(m.text, CHIP(k)) + 34), h = 32;
       const r = m.at ? nameSpot(rectOf(m), m.text, [w, h]) : place(w, h, m.part);
@@ -640,7 +650,7 @@
   // A row of sources: favicon (or a dot) and name, each opening its link.
   function sourcesRow(c, list, x, y, w, t) {
     let cx = x; const hits = [];
-    c.font = `500 10px ${MONO}`; c.fillStyle = DIM; c.fillText('SOURCES', cx, y); cx += textW('SOURCES', c.font) + 12;
+    c.font = `500 10px ${MONO}`; c.fillStyle = DIM; c.fillText('מקורות', cx, y); cx += textW('מקורות', c.font) + 12;
     for (const s of list) {
       const nw = textW(s.name, SMALL) + 26;
       if (cx + nw > x + w) break;
@@ -1592,8 +1602,8 @@
           wrapped(b, rows, x + PAD + 26, y + sumTops[i], 16, TD, TEXT, aa / 0.3);
         });
         // One thing to do next: have another go (the card's × puts it away).
-        const bw = Math.round(textW('Try again', CHIP()) + 30), br = [x + w - PAD - bw, y + h - 26 - 44, bw, 28];
-        chip(b, br[0], br[1], br[2], br[3], 'Try again', a - 0.6, { hover: this.hoverId === 'again', down: now() - S.down < 0.15 });
+        const bw = Math.round(textW("ניסיון נוסף", CHIP()) + 30), br = [x + w - PAD - bw, y + h - 26 - 44, bw, 28];
+        chip(b, br[0], br[1], br[2], br[3], "ניסיון נוסף", a - 0.6, { hover: this.hoverId === 'again', down: now() - S.down < 0.15 });
         hits.push({ rect: br, kind: 'pick', id: 'again' });
         return;
       }
@@ -1607,16 +1617,16 @@
         if (answered && !shown) b.globalAlpha *= 0.6;
         b.fillStyle = rgba(ACC, hot ? 0.16 : 0.07); b.fill(path);
         b.strokeStyle = shown ? tone(right ? 'lime' : 'coral') : hot ? ACC : MID; b.lineWidth = shown ? 2 : 1.5; b.stroke(path);
-        if (!shown) typed(b, 'ABCD'[k], r[0] + 17, oy + oh / 2 + 4, `700 11px ${MONO}`, DIM, 1, { anchor: 'middle' });
+        if (!shown) typed(b, 'אבגד'[k], r[0] + 17, oy + oh / 2 + 4, `700 11px ${MONO}`, DIM, 1, { anchor: 'middle' });
         rows.forEach((row, j) => typed(b, row, r[0] + OPX, oy + 19 + j * 16, TD, TEXT, (a - 0.2 - k * 0.08) / 0.3));
         b.restore();
         if (shown) glyph(`q${S.i}.${k}`, right).forEach((pts, j) => pen(b, l, this, placed(this, `q${S.i}.${k}.${j}`, pts, r[0] + 11, Math.round(oy + oh / 2 - 5)), strokeAt(since - j * 0.1, 0.2), tone(right ? 'lime' : 'coral'), { key: `q${S.i}.${k}.${j}`, w: 2.6 }));
         if (!answered) hits.push({ rect: r, kind: 'pick', id: `o${k}` });
       });
       if (!answered) return;
-      typed(b, picked === q.right ? 'Right.' : `Not quite: it's ${'ABCD'[q.right]}.`, x + PAD, y + pg.whyY, TD1, TEXT, since / 0.25);
+      typed(b, picked === q.right ? 'Right.' : `Not quite: it's ${'אבגד'[q.right]}.`, x + PAD, y + pg.whyY, TD1, TEXT, since / 0.25);
       wrapped(b, pg.why, x + PAD, y + pg.whyY + 18, 14, SMALL, DIM, (since - 0.2) / 0.5);
-      const label = S.i < qs.length - 1 ? 'Next' : 'See score', bw = Math.round(textW(label, CHIP()) + 30), br = [x + w - PAD - bw, y + h - 26 - 44, bw, 28];
+      const label = S.i < qs.length - 1 ? 'הבא' : 'הצגת הציון', bw = Math.round(textW(label, CHIP()) + 30), br = [x + w - PAD - bw, y + h - 26 - 44, bw, 28];
       chip(b, br[0], br[1], br[2], br[3], label, since - 0.15, { hover: this.hoverId === 'next', down: now() - S.down < 0.15 });
       hits.push({ rect: br, kind: 'pick', id: 'next' });
     }, { title: m.title || 'quiz' });
@@ -1641,7 +1651,7 @@
   async function drawTicket(m) {
     const w = 270, TF = `800 18px ${DOTO}`, titles = wrapRows(m.title, w - 36 - (m.n != null ? 34 : 0), TF), off = (titles.length - 1) * 22;
     const rows = m.text ? wrapRows(m.text, w - 40, `400 12px ${MONO}`) : [], btn = m.action ? 36 : 0, h = 64 + off + rows.length * 17 + btn + 14;
-    const k = 1.05, btnText = ellipsize(m.label || 'Try it', w - 80, CHIP(k)), realBw = Math.round(textW(btnText, CHIP(k)) + 34);
+    const k = 1.05, btnText = ellipsize(m.label || "ניסיון", w - 80, CHIP(k)), realBw = Math.round(textW(btnText, CHIP(k)) + 34);
     let hover = false, down = 0, br = null;
     const c = await card(m, w, h, function (b, l, t, x, y, age) {
       // a ticket: notches on both sides, a dashed tear line, a big number
@@ -1710,7 +1720,7 @@
   function syncClearAll() {
     const n = new Set(marks.filter((m) => m.alive && m.card && !m.leaving).map((m) => m.part)).size;
     if (n >= 2) {
-      const str = `Clear all · ${n}`, k = 1, w = Math.round(textW(str, CHIP(k)) + 26), h = 26;
+      const str = `ניקוי הכול · ${n}`, k = 1, w = Math.round(textW(str, CHIP(k)) + 26), h = 26;
       if (clearAll?.alive && clearAll.str === str) return;
       if (clearAll) clearAll.alive = false;
       const r = () => [Math.round(W / 2 - w / 2), Math.round(H - (R.safe?.bottom ?? 0) - 18 - 34 - 12 - h), w, h];
@@ -1892,9 +1902,9 @@
     let yy = 26 + 8;
     const head = (label, n, gap) => { if (gap) yy += 8; rows.push({ head: label, n, gap, y: yy, h: 26 }); yy += 26; };
     const item = (i) => { const lines = wrapRows(i.text, tw, BODY, 3), h = lines.length * 19 + 10; rows.push({ i, lines, when: remWhen(i), y: yy, h }); yy += h; };
-    head('Today', today.filter((i) => !i.done).length);
-    if (today.length) today.forEach(item); else { rows.push({ note: later.length ? 'Nothing due today' : 'Nothing on your list yet', y: yy, h: 26 }); yy += 26; }
-    if (later.length) { head('Later', later.length, true); later.forEach(item); }
+    head('היום', today.filter((i) => !i.done).length);
+    if (today.length) today.forEach(item); else { rows.push({ note: later.length ? "אין משימות להיום" : "הרשימה שלך ריקה כרגע", y: yy, h: 26 }); yy += 26; }
+    if (later.length) { head('בהמשך', later.length, true); later.forEach(item); }
     const max = maxCardH();
     let hidden = 0;
     if (yy + 10 > max) {

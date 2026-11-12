@@ -8,9 +8,9 @@ export const QUESTIONS = 4;
 const NOTE = '[Getting to know you: a note from the app, not typed by the user]';
 
 // me: the Roamie's own name (its look's: Roamie, JARVIS, Sarah…).
-export const opener = (name, me = 'Roamie') => `Hi ${name}, I'm ${me}! I'm here to help you get things done and keep you on track, whatever you're going for. I'm just curious about you, so I've got four quick questions. What are you working on these days?`;
+export const opener = (name, me = "רוֹמי") => `שלום ${name}, אני ${me}! אני כאן כדי לעזור לך להתקדם במה שחשוב לך. יש לי ארבע שאלות קצרות להיכרות. על מה אתה עובד בימים אלה?`;
 
-const RULES = (name) => `This is a short, relaxed get-to-know-you chat; ${name} just set you up. Be a curious friend who happens to be a little pixel creature on their screen, not an interviewer or a coach. You want the general shape of their days: what they do, what they're working on or learning, the apps and projects they live in (by name), and ONE real goal in their words (a launch, a number, a deadline, a thing they want to exist; doing their job well is a full answer, never push for a bigger dream). Never assume they run a business. Never ask about their personal life, what's blocking them, how they'll get there, or their name. No tools this chat. Keep it in bubbles: no "- " lines, no dashes of any kind.
+const RULES = (name) => `Always speak natural Israeli Hebrew and address Daniel in masculine singular. This is a short, relaxed get-to-know-you chat; ${name} just set you up. Be a curious friend who happens to be a little pixel creature on their screen, not an interviewer or a coach. You want the general shape of their days: what they do, what they're working on or learning, the apps and projects they live in (by name), and ONE real goal in their words (a launch, a number, a deadline, a thing they want to exist; doing their job well is a full answer, never push for a bigger dream). Never assume they run a business. Never ask about their personal life, what's blocking them, how they'll get there, or their name. No tools this chat. Keep it in bubbles: no "- " lines, no dashes of any kind.
 SKIPPING: if they want to skip, stop or get out of this chat (any words, any language), let them: ONE short friendly line with no question in it, and nothing else. Don't argue or ask why.
 REQUESTS: if instead of answering they ask you to do something (open, find, write anything), don't do it now and give no links: say in a few words it's a good one to ask you right after these questions, then ask your question again. A request is not an answer, so save nothing from it.`;
 
@@ -42,13 +42,13 @@ export const answerTurn = (n, name, text) => `${answerNote(n, name)}\n\n${name} 
 /** Plainly "skip"/"stop": ends the chat without asking the model. Anything vaguer ("not now", "can we stop this",
  *  another language) goes to the model, which answers with no question, and that ends it too (endsChat). Words
  *  that can be real answers ("no", "nope", "pass") are never taken as skipping. */
-export const wantsSkip = (text) => /^\s*(?:(?:please\s+)?(?:skip|stop|cancel|quit|exit)(?:\s+(?:this|it|that|the questions?|asking|please))?|let'?s skip(?: this| it)?|skip for now)[\s.!]*$/i.test(String(text ?? ''));
+export const wantsSkip = (text) => /^(?:\s*(?:דלג|דילוג|עצור|תעצור|הפסק|תפסיק|ביטול|בטל|לא עכשיו|אחר כך)[\s.!]*$)/u.test(String(text ?? '')) || /^\s*(?:(?:please\s+)?(?:skip|stop|cancel|quit|exit)(?:\s+(?:this|it|that|the questions?|asking|please))?|let'?s skip(?: this| it)?|skip for now)[\s.!]*$/i.test(String(text ?? ''));
 
 /** A reply to an answer that asks nothing means the chat is over (they wanted out). */
 export const endsChat = (reply) => !/\?/.test(plain(reply));
 
 /** The question in a reply, for the answer box's placeholder: the last sentence ending in "?". */
-export function questionIn(reply, fallback = 'Type your answer…') {
+export function questionIn(reply, fallback = "התשובה שלך…") {
   const text = String(reply ?? '').replace(/^\s*\[\w+\]\s*/, '').replace(/\s+/g, ' ').trim();
   let q = text.match(/[^.!?]*\?/g)?.at(-1)?.replace(/^[^\p{L}\p{N}]+/u, '').trim();
   // Too long for the box ("Okay, last one: have you used X before, like A, B or C?"): keep the question itself.
@@ -76,19 +76,19 @@ export function splitTurn(reply) {
 // ---------- the drawn welcome tour ----------
 // After the chat: job tickets for what it can do (each with a button that asks it straight away) and, when the chat
 // found one, a medal for their goal. Plain draw beats, so they go through the same checks and overlay as any drawing.
-const GOAL = /\b(goal|want(?:s|ed)? to|aim|aiming|launch|build|grow|finish|reach|hit|ship|get to|working towards?|plans? to|dream)\b/i;
+const GOAL = /(?:מטרה|רוצה|שואף|השקה|להשיק|לסיים|לבנות|להגיע)|\b(goal|want(?:s|ed)? to|aim|aiming|launch|build|grow|finish|reach|hit|ship|get to|working towards?|plans? to|dream)\b/i;
 /** The fact that reads most like their goal, or null. */
 export const goalFrom = (facts = []) => facts.map((f) => String(f.text ?? f)).find((t) => GOAL.test(t)) ?? null;
 /** The tour's beats: three tickets and, with a goal, its medal. mac: whether the how-to ticket can use words on screen. */
-export function tourBeats(name, me = 'Roamie', goal = null, { mac = true } = {}) {
+export function tourBeats(name, me = "רוֹמי", goal = null, { mac = true } = {}) {
   const ask = (value) => ({ do: 'ask', value });
   const beats = [
-    { say: `[warm] Okay ${name}, here's what I can do. Tap one to try it.`, marks: [{ kind: 'ticket', n: 1, title: 'Show you how', text: "Ask how to do something in an app and I'll draw each step right on your screen.", label: 'Try it', action: ask(mac ? 'How do I take a screenshot on this Mac?' : 'How do I change my wallpaper?') }] },
-    { say: "I can sketch out anything you're curious about.", marks: [{ kind: 'ticket', n: 2, title: 'Explain it', text: 'Graphs, timelines, molecules, even little 3D models, drawn while I talk.', label: 'Try it', action: ask('Explain compound interest with a graph') }] },
-    { say: "And I'll keep you to what you say you'll do.", marks: [{ kind: 'ticket', n: 3, title: 'Keep you on track', text: "Tell me what you'll do and when, and I'll nudge you.", label: 'Try it', action: ask('Remind me in 10 minutes to stretch') }] },
+    { say: `[warm] ${name}, אלה כמה מהדברים שאני יודע לעשות. אפשר ללחוץ על כרטיס ולנסות.`, marks: [{ kind: 'ticket', n: 1, title: "הדרכה על המסך", text: "אפשר לשאול איך עושים משהו באפליקציה ואציג את השלבים על המסך.", label: "ניסיון", action: ask(mac ? "איך מצלמים צילום מסך במק הזה?" : "איך משנים את תמונת הרקע?") }] },
+    { say: "אני יכול להמחיש בתרשים כל דבר שמעניין אותך.", marks: [{ kind: 'ticket', n: 2, title: "הסבר ותרשימים", text: "גרפים, צירי זמן, מולקולות ומודלים בתלת־ממד בזמן ההסבר.", label: "ניסיון", action: ask("תסביר לי ריבית דריבית בעזרת גרף") }] },
+    { say: "ואעזור לך להתמיד במה שהחלטת לעשות.", marks: [{ kind: 'ticket', n: 3, title: "להתקדם יחד", text: "תגיד מה תרצה לעשות ומתי, ואדאג להזכיר לך.", label: "ניסיון", action: ask("תזכיר לי בעוד עשר דקות לעשות מתיחות") }] },
   ];
   const g = goal && String(goal).replace(/\s+/g, ' ').trim().slice(0, 110);
-  if (g) beats.push({ say: `[bright] And this is what we're going for. I'm in, ${name}.`, marks: [{ kind: 'medal', title: 'your goal', text: g }, { kind: 'emote', name: 'hype' }] });
+  if (g) beats.push({ say: `[bright] זו המטרה שלנו, ${name}. אני כאן לעזור.`, marks: [{ kind: 'medal', title: "המטרה שלך", text: g }, { kind: 'emote', name: 'hype' }] });
   return beats.map((b) => ({ ...b, say: b.say.slice(0, 240) }));
 }
 
@@ -97,18 +97,18 @@ export function tourBeats(name, me = 'Roamie', goal = null, { mac = true } = {})
 // Hardcoded content (no model call), plain draw beats like the tour above. The last beat only wraps up.
 export const SHOWCASE = ['web', 'graph', 'timeline', 'molecule', 'model', 'list'];
 const savings = (rate) => Array.from({ length: 16 }, (_, i) => [i * 2, Math.round(1000 * (1 + rate) ** (i * 2))]);
-export function showcaseBeats(name, me = 'Roamie') {
+export function showcaseBeats(name, me = "רוֹמי") {
   const beats = [
-    { say: `[warm] Here's a quick look at what I can do, ${name}. First, I can search the web for you.`, marks: [{ kind: 'card', title: 'web search', heading: 'How tall is Everest?', text: '8,849 metres. China and Nepal agreed on that height together in 2020.', sources: [{ name: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Mount_Everest' }, { name: 'BBC', url: 'https://www.bbc.com/news/world-asia-55218208' }] }] },
-    { say: 'I can turn numbers into graphs, like how saving grows.', marks: [{ kind: 'graph', title: '$1,000 over 30 years', x_range: [0, 30], plots: [{ points: savings(0.07), tone: 'accent', label: 'at 7%' }, { points: savings(0), tone: 'amber', label: 'under the bed' }] }] },
-    { say: 'Timelines, so history makes sense.', marks: [{ kind: 'timeline', title: 'the space race', events: [{ when: '1957', text: 'Sputnik' }, { when: '1961', text: 'First person in space' }, { when: '1969', text: 'Moon landing' }, { when: '1998', text: 'Space station' }] }] },
-    { say: 'Science too. This is caffeine, the stuff in your coffee.', marks: [{ kind: 'molecule', smiles: 'CN1C=NC2=C1C(=O)N(C)C(=O)N2C', label: 'caffeine' }] },
-    { say: 'And little 3D models, like Saturn and a moon.', marks: [{ kind: 'model', title: 'saturn', parts: [
-      { shape: 'sphere', size: [1, 1, 1], tone: 'amber', label: 'Saturn' },
-      { shape: 'torus', size: [2.1, 0.5, 2.1], rot: [24, 0, 10], tone: 'white', label: 'rings' },
-      { shape: 'sphere', at: [1.5, 0.5, 0], size: [0.22, 0.22, 0.22], tone: 'sky', label: 'Titan' }] }] },
-    { say: "I'll plan things with you and keep you on track.", marks: [{ kind: 'list', title: 'this week', items: ['Finish the slides by Thursday', 'Call the dentist', 'Gym on Monday and Wednesday'] }] },
-    { say: `[bright] That's a taste. Ask ${me} for any of it, any time.`, marks: [{ kind: 'emote', name: 'hype' }] },
+    { say: `[warm] ${name}, הנה כמה דוגמאות. קודם כול, אני יכול לחפש בשבילך ברשת.`, marks: [{ kind: 'card', title: "חיפוש ברשת", heading: "מה הגובה של האוורסט?", text: "8,849 מטרים. סין ונפאל הסכימו יחד על הגובה הזה בשנת 2020.", sources: [{ name: 'Wikipedia', url: 'https://en.wikipedia.org/wiki/Mount_Everest' }, { name: 'BBC', url: 'https://www.bbc.com/news/world-asia-55218208' }] }] },
+    { say: "אני יכול להציג מספרים בגרף. למשל, איך חיסכון גדל עם הזמן.", marks: [{ kind: 'graph', title: "אלף דולר לאורך שלושים שנה", x_range: [0, 30], plots: [{ points: savings(0.07), tone: 'accent', label: "בריבית של 7%" }, { points: savings(0), tone: 'amber', label: "ללא ריבית" }] }] },
+    { say: "ציר זמן עוזר לראות מה קרה ומתי.", marks: [{ kind: 'timeline', title: "המרוץ לחלל", events: [{ when: '1957', text: "ספוטניק" }, { when: '1961', text: "האדם הראשון בחלל" }, { when: '1969', text: "נחיתה על הירח" }, { when: '1998', text: "תחנת החלל" }] }] },
+    { say: "וגם מדע. זו מולקולת קפאין, החומר שנמצא בקפה שלך.", marks: [{ kind: 'molecule', smiles: 'CN1C=NC2=C1C(=O)N(C)C(=O)N2C', label: "קפאין" }] },
+    { say: "אפשר גם להציג מודלים בתלת ממד. למשל, שבתאי ואחד הירחים שלו.", marks: [{ kind: 'model', title: "שבתאי", parts: [
+      { shape: 'sphere', size: [1, 1, 1], tone: 'amber', label: "שבתאי" },
+      { shape: 'torus', size: [2.1, 0.5, 2.1], rot: [24, 0, 10], tone: 'white', label: "טבעות" },
+      { shape: 'sphere', at: [1.5, 0.5, 0], size: [0.22, 0.22, 0.22], tone: 'sky', label: "טיטאן" }] }] },
+    { say: "נתכנן יחד משימות ואעזור לך להתקדם.", marks: [{ kind: 'list', title: "השבוע", items: ["לסיים את המצגת עד יום חמישי", "להתקשר לרופא השיניים", "אימון ביום שני וברביעי"] }] },
+    { say: `[bright] זו רק טעימה. אפשר לבקש מ־${me} כל אחד מהדברים האלה בכל זמן.`, marks: [{ kind: 'emote', name: 'hype' }] },
   ];
   return beats.map((b) => ({ ...b, say: b.say.slice(0, 240) }));
 }

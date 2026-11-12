@@ -686,6 +686,17 @@
         const edge = Math.min(1, fadeTop ? (cy / lh) * 1.2 : 1, fadeBot ? ((ih - cy) / lh) * 1.2 : 1);
         if (edge <= 0.02) continue;
         tctx.globalAlpha = clamp(edge, 0, 1);
+        // A Hebrew line must be shaped as a whole: drawing isolated letters left-to-right reverses it
+        // and breaks mixed Hebrew, product names and numbers. Canvas applies the Unicode bidi algorithm.
+        if (/[\u0590-\u05ff]/.test(line.s)) {
+          const visible = line.s.slice(0, Math.max(0, shown - line.start));
+          tctx.save();
+          tctx.direction = 'rtl'; tctx.textAlign = 'right';
+          tctx.font = `${base} ${fpx}px Arial, sans-serif`; tctx.fillStyle = ink;
+          tctx.fillText(visible, iw - 1, cy, iw);
+          tctx.restore();
+          continue;
+        }
         for (let j = 0; j < line.s.length; j++) {
           const idx = line.start + j;
           if (idx >= shown) break;
@@ -715,7 +726,9 @@
         if (bb.text) ({ li, col } = caretAt(bb.lines, bb.input.caret ?? bb.text.length));
         if (col >= bb.cols) col = bb.cols - 1;
         const cy = (li - s0) * lh;
-        if (cy > -1 && cy < ih) { tctx.fillStyle = css(HOT); tctx.fillRect(col * cw + 0.5, cy + lh * 0.15, Math.max(1.5, t * 0.8), lh * 0.7); }
+        const rtl = /[\u0590-\u05ff]/.test(bb.text || bb.input.placeholder || '');
+        const caretX = rtl ? iw - col * cw - 1 : col * cw + 0.5;
+        if (cy > -1 && cy < ih) { tctx.fillStyle = css(HOT); tctx.fillRect(caretX, cy + lh * 0.15, Math.max(1.5, t * 0.8), lh * 0.7); }
       }
       // Clip to the frame as it is this instant: it may still be growing, or shrinking away on close.
       const cx1 = fr.x + fr.w - padX(bb) + 2, cy1 = fr.y + fr.h - padY(bb) - (bb.input?.listen ? (METER + 1) * P : 0) - footH(bb) + 2;
@@ -810,7 +823,7 @@
     const handKick = () => (hand.running ??= handRun().catch((e) => console.error('hand', e)).finally(() => { hand.running = null; }));
 
     const api = {
-      say: (text, opts) => { ensureShown(); return open('speech', text, opts); },
+      say: (text, opts) => { ensureShown(); return open('speech', window.ROAMIES_HE?.(text) ?? text, opts); },
       think: (text, opts = {}) => {
         ensureShown();
         const h = open('thought', text, { ...opts, stream: true });

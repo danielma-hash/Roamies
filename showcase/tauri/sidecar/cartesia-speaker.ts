@@ -1,3 +1,4 @@
+import { speakableHebrew } from './hebrew.js';
 import type { SpeakerOptions, SpokenTurn } from './voice.types.js';
 
 export const CARTESIA_API = 'https://api.cartesia.ai';
@@ -76,7 +77,7 @@ export class CartesiaSpeaker {
       say: (text) => {
         if (done || ended) return;
         // Fish Audio's performance cues aren't Cartesia's text syntax.
-        const transcript = text.replace(/\[[^\]]*\]\s*/g, '').trim();
+        const transcript = speakableHebrew(text);
         if (!transcript) return;
         chars += transcript.length;
         queue = queue.then(async () => {

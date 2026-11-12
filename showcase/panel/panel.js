@@ -97,7 +97,7 @@
     if (s < 45) return 'now';
     if (s < 3600) return `${Math.round(s / 60)}m`;
     if (s < 86400) return `${Math.round(s / 3600)}h`;
-    return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    return new Date(at).toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
   };
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
   const tokens = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -112,7 +112,7 @@
   const price = (c) => {
     const per100 = (perM) => `$${(perM * 0.02).toFixed(2)}`;
     const promo = c.promo && Date.now() < Date.parse(c.promo.until)
-      ? ` (${per100(c.promo.perM)} until ${new Date(Date.parse(c.promo.until) - 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'America/Los_Angeles' })})` : '';
+      ? ` (${per100(c.promo.perM)} until ${new Date(Date.parse(c.promo.until) - 1).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', timeZone: 'America/Los_Angeles' })})` : '';
     return `$${c.perM} per million characters: about ${per100(c.perM)} per 100 replies${promo}. Billed to your Cartesia account.`;
   };
   const where = () => (state?.os === 'mac' ? 'your Keychain' : state?.os === 'win' ? 'Windows, encrypted for your account' : state?.os === 'linux' ? 'your keyring' : 'this computer');
@@ -731,6 +731,8 @@
       name: 'Roamie', look: 'classic', looks: [['classic', 'Roamie'], ['jarvis', 'JARVIS'], ['anime', 'Anime Girl'], ['sarah', 'Sarah'], ['adrian', 'Adrian']],
       size: 'default', sizes: [['default', 'Default'], ['small', 'Small'], ['cursor', 'Cursor']],
       replies: 'voice', fishKey: true, fishModel: 'drama-3', fishFree: false,
+      cartesiaVoice: '431b7e77-b46d-4eda-8362-db430ac0913c', sonioxKey: true,
+      cartesiaVoices: window.ROAMIES_HE_VOICES ?? [],
       fishModels: [{ id: 'drama-3', name: 'Drama 3', perM: 50, promo: { perM: 10, until: '2026-12-01T08:00:00Z' } }, { id: 's2.1-pro', name: 'S2.1 Pro', perM: 15 }],
       voice: { on: true, keys: '⌃⌥', ready: true, mac: true, mute: true, wakeWord: false, download: null }, askKeys: '⌥⌘',
       sound: true, actions: false, login: { on: true },

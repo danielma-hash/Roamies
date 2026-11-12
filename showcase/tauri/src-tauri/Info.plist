@@ -2,20 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>he</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>he</string></array>
   <!-- Menu bar only: no Dock icon, no app switcher entry, even during launch. -->
   <key>LSUIElement</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Roamies listens while you hold your talk shortcut.</string>
+  <string>Roamies משתמש במיקרופון בזמן דיבור ושולח את האודיו ל־Soniox לתמלול.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Roamies turns what you say into text, on your Mac.</string>
+  <string>Roamies ממיר דיבור לטקסט.</string>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>Roamies reads files on your Desktop when you ask it to.</string>
+  <string>Roamies קורא קבצים בשולחן העבודה רק כשאתה מבקש.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>Roamies reads files in Documents when you ask it to.</string>
+  <string>Roamies קורא קבצים בתיקיית המסמכים רק כשאתה מבקש.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>Roamies reads files in Downloads when you ask it to.</string>
+  <string>Roamies קורא קבצים בתיקיית ההורדות רק כשאתה מבקש.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Roamies looks at your screen when you ask it to.</string>
+  <string>Roamies מצלם את המסך רק כשאתה מבקש עזרה לגביו.</string>
 </dict>
 </plist>

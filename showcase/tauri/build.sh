@@ -8,6 +8,7 @@ rm -rf dist && mkdir -p dist
 cp ../desktop.html dist/
 cp -R ../roamies ../onboarding ../panel dist/
 ../tauri/sidecar/bundle.sh
+./sidecar/node_modules/.bin/esbuild sidecar/browser-hebrew.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=dist/roamies/hebrew.js --log-level=warning
 # Ship a Node.js runtime with the app, for the target being built (--target <triple>, else this machine).
 TARGET=""; prev=""; for a in "$@"; do [ "$prev" = "--target" ] && TARGET="$a"; prev="$a"; done
 ../tauri/sidecar/fetch-node.sh ${TARGET:+"$TARGET"}
