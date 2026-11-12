@@ -6,7 +6,7 @@ final class SonioxRecognizer: Recognizer {
     private let process = Process()
     private let input = Pipe(), output = Pipe()
     private let queue = DispatchQueue(label: "roamies.soniox")
-    private let callbacks: RecognizerCallbacks
+    private var callbacks: RecognizerCallbacks?
     private var configured = false
     private var stopped = false
     private var pending = Data()
@@ -27,7 +27,9 @@ final class SonioxRecognizer: Recognizer {
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !self.stopped else { return }
                         self.stopped = true
-                        self.callbacks.onError(NSError(domain: "Soniox", code: 2, userInfo: [NSLocalizedDescriptionKey: "Soniox speech helper stopped unexpectedly"]))
+                        let callback = self.callbacks
+                        self.callbacks = nil
+                        callback?.onError(NSError(domain: "Soniox", code: 2, userInfo: [NSLocalizedDescriptionKey: "Soniox speech helper stopped unexpectedly"]))
                         self.close()
                     }
                 }
@@ -42,11 +44,19 @@ final class SonioxRecognizer: Recognizer {
                     guard let msg = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
                     DispatchQueue.main.async { [weak self] in
                         guard let self, !self.stopped else { return }
-                        if let text = msg["text"] as? String { self.callbacks.onText(text) }
-                        if msg["done"] as? Bool == true { self.stopped = true; self.callbacks.onDone(); self.close() }
+                        if let text = msg["text"] as? String { self.callbacks?.onText(text) }
+                        if msg["done"] as? Bool == true {
+                            self.stopped = true
+                            let callback = self.callbacks
+                            self.callbacks = nil
+                            callback?.onDone()
+                            self.close()
+                        }
                         if let error = msg["error"] as? String {
                             self.stopped = true
-                            self.callbacks.onError(NSError(domain: "Soniox", code: 1, userInfo: [NSLocalizedDescriptionKey: error]))
+                            let callback = self.callbacks
+                            self.callbacks = nil
+                            callback?.onError(NSError(domain: "Soniox", code: 1, userInfo: [NSLocalizedDescriptionKey: error]))
                             self.close()
                         }
                     }
@@ -72,7 +82,7 @@ final class SonioxRecognizer: Recognizer {
         }
     }
     func end() { queue.async { [weak self] in self?.send(["end": true]) } }
-    func cancel() { stopped = true; close() }
+    func cancel() { stopped = true; callbacks = nil; close() }
     private func close() {
         output.fileHandleForReading.readabilityHandler = nil
         queue.async { [self] in
