@@ -3,6 +3,24 @@ import { SpeechPreparer } from '../speech-preparer.js';
 
 const speech = new SpeechPreparer();
 describe('Vocaly speech regressions on the desktop TTS boundary', () => {
+  it('speaks Hebrew spellings of Jarvis as the same English name with explicit sounds', () => {
+    for (const name of ['ג׳ארוויס', "ג'ארוויס", 'גארוויס', 'ג׳ארויס', 'ג׳רוויס', 'JARVIS', 'Jarvis', 'jarvis']) {
+      const normalized = speech.normalize(`שלום, אני ${name}.`);
+      expect(normalized).toBe('שלום, אני Jarvis.');
+      expect(speech.normalize(normalized)).toBe(normalized);
+      expect(speech.segment(normalized)).toEqual([
+        { language: 'he', transcript: 'שלום, אני' }, { language: 'en', transcript: '<<ˈ|dʒ|ɑ|ɹ|v|ɪ|s>>.' },
+      ]);
+    }
+    expect(speech.segment(speech.normalize('תגיד לג׳ארוויס ול־JARVIS.'))).toEqual([
+      { language: 'he', transcript: 'תגיד' }, { language: 'en', transcript: '<<l|ɛ>> <<ˈ|dʒ|ɑ|ɹ|v|ɪ|s>> <<u|l|ɛ>> <<ˈ|dʒ|ɑ|ɹ|v|ɪ|s>>.' },
+    ]);
+    for (const other of ['ג׳ארוויסון', 'myJarvis', 'Jarvison', 'Jarvis.ts']) {
+      expect(speech.normalize(other)).toBe(other);
+      expect(speech.segment(other).map((segment) => segment.transcript).join('')).toBe(other);
+    }
+    expect(speech.segment('_Jarvis')).toEqual([{ language: 'en', transcript: '_Jarvis' }]);
+  });
   it('preserves English phrases, acronyms, versions and Hebrew with niqqud', () => {
     expect(speech.segment('פתח Google Chrome ואז GitHub Actions.')).toEqual([
       { language: 'he', transcript: 'פתח' }, { language: 'en', transcript: 'Google Chrome' },
