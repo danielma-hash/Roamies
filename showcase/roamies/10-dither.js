@@ -47,13 +47,13 @@
       // Size: 'default', 'small' (half the body) or 'cursor' (a pixel arrow pointer). Text keeps its size either way.
       let form = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('form')) || 'default', lastEnv = null;
       let userForm = form;
-      // Look: 'classic' (the goo blob, and the arrow at cursor size), 'jarvis' (roamies/jarvis.js: a globe of
-      // points with a lit heart, and a HUD reticle at cursor size) or a character from roamies/people.js
+      // Look: 'classic' (the goo blob, and the arrow at cursor size), 'jarvis' (roamies/jarvis.js: a smooth
+      // holographic globe, and a HUD reticle at cursor size) or a character from roamies/people.js
       // ('anime', 'sarah', 'adrian'). Moves, sizes and everything else are shared.
       const drawn = (l) => (l === 'jarvis' ? Roamie.jarvis : Roamie.people?.[l]);
       const pickLook = (l) => (drawn(l) ? l : 'classic');
       let look = pickLook(typeof location !== 'undefined' ? new URLSearchParams(location.search).get('look') : null);
-      const jst = { spin: 0, dt: 0.016 };
+      const jst = { spin: 0, dt: 0.016, look: [0, 0], quiet: false, reduced: false };
       const hands = [-1, 1].map((s) => ({ s, x: m.x, y: m.y, vx: 0, vy: 0 }));
       const parts = [];
       let act = null, pending = null, arms = 0, ox = 0, oy = 0, prevHop = 0;
@@ -97,15 +97,6 @@
         }
       };
       const put = (x, y, lvl = 0) => setPx(x, y, PAL[clamp(lvl, 0, L)]);
-      // JARVIS draws points that overlap; the brightest one in each cell wins, then they're written once.
-      const jbuf = new Map();
-      const jput = (x, y, l) => {
-        const gx = Math.round(x), gy = Math.round(y);
-        if (gx < 0 || gy < 0 || gx >= 8192) return;
-        const key = gy * 8192 + gx;
-        if ((jbuf.get(key) ?? -1) < l) jbuf.set(key, l);
-      };
-      const jflush = () => { for (const [key, l] of jbuf) put(key % 8192, Math.floor(key / 8192), l); jbuf.clear(); };
       const line = (x0, y0, x1, y1, lvl) => {
         const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / P));
         for (let i = 0; i <= n; i++) put(Math.round((x0 + ((x1 - x0) * i) / n) / P), Math.round((y0 + ((y1 - y0) * i) / n) / P), lvl);
@@ -480,38 +471,26 @@
         const J = drawn(look);
         if (!J) return;
         const A = act?.name;
+        jst.look[0] = face.lookX; jst.look[1] = face.lookY;
         Object.assign(jst, {
           t, mode: pose?.mode ?? null, heard: pose?.heard, voice: window.Roamie.voiceOut?.playing() ? window.Roamie.voiceOut.level() : null, act: A ?? null, actA: act?.a ?? 0,
-          open: face.open, look: [face.lookX, face.lookY], speed: m.speed, vx: m.vx, sq: sq.x,
+          open: face.open, speed: m.speed, vx: m.vx, sq: sq.x, reduced: !!env.reduced,
           wide: face.wide, dizzy: face.dizzy, happy: face.happy, sleepy: Math.max(env.sleepy ?? 0, face.sleepy ?? 0),
           mouth: pose?.mouth ?? (act && { wave: null, hype: 'shout', remind: 'o', upset: 'frown', motivate: 'grin' }[A]),
           brow: pose ? pose.brow : A === 'upset' ? 'angry' : A === 'motivate' ? 'determined' : A === 'remind' ? 'raised' : null,
         });
-        // The globe's points overlap (the brightest wins); a character is drawn in layers (the last one wins).
-        if (look !== 'jarvis') {
-          const k = { put, L, th };
-          if (form === 'cursor') J.cursor(k, Math.round(bx / P), Math.round(by / P), Math.round(bx / P) - AX, Math.round(by / P) - AY, jst);
-          else J.body(k, bx / P, by / P, R / P, jst);
-          return;
-        }
-        const k = { put: jput, L, th };
+        // Jarvis is painted directly onto the high-DPI canvas in draw(); other looks keep their cells.
+        if (look === 'jarvis') return;
+        const k = { put, L, th };
         if (form === 'cursor') J.cursor(k, Math.round(bx / P), Math.round(by / P), Math.round(bx / P) - AX, Math.round(by / P) - AY, jst);
-        else {
-          // A faint projector glow on the floor under the hologram.
-          const fy = (by + R * 1.3) / P, fw = (R * 0.75) / P;
-          for (let y = -1; y <= 1; y++) for (let x = -Math.ceil(fw); x <= Math.ceil(fw); x++) {
-            const u = 1 - Math.hypot(x / fw, y / 1.4);
-            if (u > 0 && u * 0.9 > th(Math.round(bx / P) + x, Math.round(fy) + y)) jput(bx / P + x, fy + y, u > 0.5 ? 2 : 1);
-          }
-          J.body(k, bx / P, by / P, R / P, jst);
-        }
-        jflush();
+        else J.body(k, bx / P, by / P, R / P, jst);
       };
 
       // Following the cursor: how far the body is from its grid cell (dx, dy in CSS px) and that cell, or null.
       // The cell comes from where it is, not its little gestures (ox, oy: a talking bounce): those moved the
       // cell, and with it the speech bubble and its text, up and down with every bounce.
       const glideSnap = () => {
+        if (look === 'jarvis') return null;
         if (!m.drive || (pres.state !== 'shown' && pres.state !== 'in') || P <= 0) return null;
         const bx = m.x, by = m.y, cx = Math.round(bx / P), cy = Math.round(by / P);
         return { dx: cx * P - bx, dy: cy * P - by, cx, cy };
@@ -588,6 +567,7 @@
         morph,
         get look() { return look; },
         setLook(l) { look = pickLook(l); jst.spin = 0; jst.tail = null; },
+        setCompanionMode(mode) { jst.quiet = mode === 'quiet'; },
         resize(env) {
           lastEnv = env;
           const S = Roamie.unit(env);
@@ -605,6 +585,7 @@
         bonk() { sq.kick(16); S('bonk'); if (!forced) pending = 'upset'; for (let i = 0; i < 6; i++) drips.push({ x: m.x, y: m.y, vx: rand(-260, 260), vy: rand(-300, 60), r: R * rand(0.12, 0.22), rMax: 0, hold: 0, life: 1 }); },
         update(dt, env) {
           t += dt; jst.dt = dt;
+          if (look === 'jarvis' && !env.reduced && !jst.quiet) jst.spin += dt * (pose?.mode === 'think' ? 1.3 : 0.28);
           EW = env.w; EH = env.h;
           if (pres.state === 'hidden') { blinkCut(); plug?.update?.(dt, env); return; }
           const performing = pres.state === 'in' || pres.state === 'out';
@@ -623,12 +604,12 @@
             act.a += dt;
             m.mode = 'rest'; m.rest = Math.max(m.rest, 0.3);
             if (act.a >= act.dur) { act = null; m.rest = rand(0.4, 1.2); nextAct = rand(2.5, 5); }
-          } else if (!performing && !m.native && !plug?.busy?.() && env.sleepy < 0.5 && !m.dragging && !m.flung && (nextAct -= dt) <= 0) {
+          } else if (!(look === 'jarvis' && (env.reduced || jst.quiet)) && !performing && !m.native && !plug?.busy?.() && env.sleepy < 0.5 && !m.dragging && !m.flung && (nextAct -= dt) <= 0) {
             startAct(ACTS[actIdx++ % ACTS.length]);
           }
           const A = act?.name, a = act?.a ?? 0;
           // A speech bubble is up: keep the gesture, skip the confetti, steam and flames, hop lower.
-          const calm = !!plug?.calm?.();
+          const calm = !!plug?.calm?.() || (look === 'jarvis' && (env.reduced || jst.quiet));
           let tl = [-0.55, 0.2], tr = [0.55, 0.2];
           ox = 0; oy = 0;
           if (A === 'wave') {
@@ -670,6 +651,7 @@
             if (pose.tr) tr = pose.tr;
             ox = pose.ox ?? 0; oy = pose.oy ?? 0;
           }
+          if (look === 'jarvis' && (env.reduced || jst.quiet)) { ox = 0; oy = 0; }
           arms = Roamie.damp(arms, act ? 1 : pose?.arms ?? 0, act || pose?.arms ? 10 : 6, dt);
           for (const h of hands) { const tg = h.s < 0 ? tl : tr; spring(h, m.x + ox + tg[0] * R, m.y + oy + tg[1] * R, 150, 13, dt); }
           for (let i = parts.length - 1; i >= 0; i--) {
@@ -746,7 +728,7 @@
           for (const b of balls) b.r2 = b.r * b.r;
           const lx = -0.5, ly = -0.65, lz = 0.57;
           let gx0 = 0, gx1 = gw, gy0 = 0, gy1 = gh;
-          if (clear) {
+          if (clear || look === 'jarvis') {
             // Only last frame's cells hold anything, so only they need wiping.
             if (pd) for (let y = pd[1] * K; y < pd[3] * K; y++) u32.fill(0, y * IW + pd[0] * K, y * IW + pd[2] * K);
             else d.fill(0);
@@ -764,7 +746,7 @@
               ? (gx, gy) => { const v = 0.55 * th(gx, gy) + 0.45 * clamp(Math.hypot((gx + 0.5) * P - bx, (gy + 0.5) * P - by) / R2, 0, 1); return v < e ? (v > e - 0.14 ? 2 : 1) : 0; }
               : (gx, gy) => { const v = 0.5 * th(gx, gy) + 0.5 * clamp(((gy + 0.5) * P - top) / H2, 0, 1); return v < e ? 0 : v < e + 0.12 ? 2 : 1; };
           }
-          if ((form === 'cursor' || look !== 'classic') && !clear) for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) setPx(gx, gy, PAL[0]);
+          if ((form === 'cursor' || look !== 'classic') && look !== 'jarvis' && !clear) for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) setPx(gx, gy, PAL[0]);
           if (look !== 'classic') drawLook(bx, by, env);
           else if (form === 'cursor') drawCursor(bx, by, shX, shY, shK);
           else for (let gy = gy0; gy < gy1; gy++) {
@@ -840,6 +822,14 @@
             else bubble(gx, gy, icon);
           }
           plug?.gridOver?.(env);
+          // Reserve the vector globe's complete halo even when the LED layer itself is empty.
+          if (look === 'jarvis') {
+            const reach = R * 1.6;
+            dx0 = Math.min(dx0, clamp(Math.floor((bx - reach) / P), 0, gw));
+            dy0 = Math.min(dy0, clamp(Math.floor((by - reach) / P), 0, gh));
+            dx1 = Math.max(dx1, clamp(Math.ceil((bx + reach) / P), 0, gw - 1));
+            dy1 = Math.max(dy1, clamp(Math.ceil((by + reach) / P), 0, gh - 1));
+          }
           pd = dx1 >= dx0 ? [dx0, dy0, dx1 + 1, dy1 + 1] : null;
           // Tools, guides and cards also draw outside the grid, so they get the whole screen.
           if (!clear || plug?.wide?.()) rect = [0, 0, gw, gh];
@@ -863,7 +853,7 @@
           // A fingerprint of the picture: the lit cells, where the patch sits and the glide offset. NaN (never equal)
           // whenever something is also drawn outside the grid or the CRT effect is playing.
           let sig = NaN;
-          if (clear && pd && !performing && !crtXform() && !mo && (!plug || plug.quiet?.())) {
+          if (look !== 'jarvis' && clear && pd && !performing && !crtXform() && !mo && (!plug || plug.quiet?.())) {
             let h = 2166136261 ^ (rect[0] * 73856093) ^ (rect[1] * 19349663) ^ (rect[2] * 83492791) ^ rect[3];
             for (let y = pd[1] * K; y < pd[3] * K; y++) for (let i = y * IW + pd[0] * K, e = y * IW + pd[2] * K; i < e; i++) h = Math.imul(h ^ u32[i], 16777619);
             const glide = !!m.drive && pres.state === 'shown';
@@ -888,7 +878,7 @@
           ctx.imageSmoothingQuality = 'high';
           // Following the cursor: the whole LED layer (and the text drawn over it) slides by the part of a cell
           // the body is past its grid cell, so it glides with the cursor instead of hopping a cell at a time.
-          const glide = !!m.drive && (pres.state === 'shown' || pres.state === 'in');
+          const glide = look !== 'jarvis' && !!m.drive && (pres.state === 'shown' || pres.state === 'in');
           ctx.save();
           // Snapped to whole screen pixels: a part-pixel shift resamples the dots unevenly, so they'd shimmer.
           const dpr = env.dpr || 1;
@@ -901,7 +891,15 @@
             ctx.save();
             ctx.translate(bx, by - mx.lift); ctx.rotate(mx.rot); ctx.scale(Math.max(mx.sx, 0.0001), Math.max(mx.sy, 0.0001)); ctx.translate(-bx, -by);
           }
-          if (!crt || crt.sx > 0.01) ctx.drawImage(off, sx, sy, sw, sh, X, Y, DW, DH);
+          if (!crt || crt.sx > 0.01) {
+            if (look === 'jarvis') {
+              ctx.save();
+              if (pres.v === 'materialize' && (pres.state === 'in' || pres.state === 'out')) ctx.globalAlpha *= clamp(pres.state === 'in' ? front() : 1 - front(), 0, 1);
+              Roamie.jarvis.draw(ctx, bx, by, form === 'cursor' ? P * 4.8 : R, jst, form === 'cursor', bx - AX * P, by - AY * P);
+              ctx.restore();
+            }
+            ctx.drawImage(off, sx, sy, sw, sh, X, Y, DW, DH);
+          }
           if (crt && crt.flash > 0.01 && crt.sx > 0.01) {
             // over-exposed tube warming up / cooling down
             ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = crt.flash * 0.85;

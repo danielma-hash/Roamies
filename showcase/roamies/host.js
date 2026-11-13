@@ -422,6 +422,7 @@
     if (held) { held.q.push(m); return; }
     if (m.kind === 'sound') { if (Roamie.sfx) Roamie.sfx.enabled = m.on; return; }
     if (m.kind === 'size') { for (const t of Roamie.tiles ?? []) t.creature.setForm?.(m.size); return; }
+    if (m.kind === 'companion_mode') { for (const t of Roamie.tiles ?? []) t.creature.setCompanionMode?.(m.mode); return; }
     if (m.kind === 'look') {
       for (const t of Roamie.tiles ?? []) t.creature.setLook?.(m.look);
       field.setAttribute('aria-label', `Message for ${NAMES[m.look] ?? NAMES.classic}`);

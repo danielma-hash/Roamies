@@ -1352,6 +1352,7 @@ function panelState() {
     commitments: openCommitments().map((c) => ({ id: c.id, text: c.text, due: c.due ?? null, when: c.due ? fmtWhen(c.due) : '', overdue: !!(c.due && c.due < Date.now()) })),
     look: config.look ?? 'classic', looks: LOOKS.map(([id, label]) => [id, label]), name: lookName(),
     size: sizeNow(), sizes: SIZES,
+    companionMode:config.companionMode==='quiet'?'quiet':'companion',
     replies: config.replies === 'voice' ? 'voice' : 'text', fishKey: speech.on,
     fishModel: speech.pick, fishModels: FISH_CHOICES, fishFree: false,
     sonioxKey: sonioxKeySaved, cartesiaVoice: lookVoice(), cartesiaVoices: CARTESIA_VOICES,
@@ -1534,6 +1535,7 @@ async function onMenu(id) {
     const v = speech.start();
     if (v) { v.say('שלום דניאל. זה הקול שבחרת. אפשר לדבר איתי בעברית, לשאול שאלות ולקבל עזרה.'); v.end(); }
   }
+  else if(id==='companion:quiet'||id==='companion:companion'){config.companionMode=id.slice(10);saveConfig();ui({kind:'companion_mode',mode:config.companionMode});menu();}
   else if (id === 'sonioxkey_remove') {
     await secrets.delete('soniox'); sonioxKeySaved = false; menu();
   }
@@ -1805,6 +1807,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     ui({ kind: 'sound', on: config.sound });
     ui({ kind: 'size', size: sizeNow() });
     ui({ kind: 'look', look: config.look ?? 'classic' });
+    ui({ kind: 'companion_mode', mode:config.companionMode??'companion' });
     if (config.onboarded) ui({ kind: 'greet' });
   } else if (m.type?.startsWith('ob_') || m.type?.startsWith('chat_') || m.type === 'set_keys' || m.type === 'set_actions' || m.type === 'set_login' || m.type === 'keybind_error') onGuide(m).catch((e) => console.error('guide', e));
   else if (m.type?.startsWith('voice')) onVoice(m);
