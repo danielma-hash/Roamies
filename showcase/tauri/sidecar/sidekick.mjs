@@ -50,6 +50,7 @@ import { createWorkspaceTools } from './workspace-tools.ts';
 import { TaskCardsService } from './task-cards.service.ts';
 import { AttentionService } from './attention.service.ts';
 import { PronunciationDictionaryService } from './pronunciation-dictionary.service.ts';
+import { EvidenceHealthService } from './evidence-health.service.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -701,7 +702,9 @@ const toolNames = new Map(); // tool call id → tool name (tool_call_end doesn'
 // Activity log: ~/.gg/sidekick/logs/YYYY-MM-DD.log, one line per event, kept 7 days. What Sidekick did and how it
 // went (tools, steps, timings, errors), for working out what went wrong. Typed text is reduced to its length.
 const LOG_DIR = path.join(process.env.ROAMIES_DATA_DIR ? path.join(process.env.ROAMIES_DATA_DIR, 'sidekick') : path.join(HOME, '.gg', 'sidekick'), 'logs');
+const evidenceHealth = new EvidenceHealthService();
 const logLine = (kind, data) => {
+  if(evidenceHealth.record(kind,data))panel();
   const now = new Date(), day = now.toLocaleDateString('en-CA');
   const line = `${now.toISOString()} ${kind} ${typeof data === 'string' ? data : JSON.stringify(data)}\n`;
   fs.mkdir(LOG_DIR, { recursive: true, mode: 0o700 }).then(() => fs.appendFile(path.join(LOG_DIR, `${day}.log`), line, { mode: 0o600 })).catch(() => {});
@@ -1321,7 +1324,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
-    workspace: workspace.snapshot(),
+    workspace: {...workspace.snapshot(),health:evidenceHealth.snapshot()},
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,

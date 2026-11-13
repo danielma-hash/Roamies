@@ -70,6 +70,7 @@ export class CartesiaSpeaker {
     this.stop();
     const id = `c${++this.seq}`, controller = new AbortController();
     let queue = Promise.resolve(), ended = false, done = false, chars = 0, heard = false;
+    let firstRequestAt: number | undefined;
     const finish = (): void => {
       if (done) return;
       done = true;
@@ -86,6 +87,7 @@ export class CartesiaSpeaker {
           chars += transcript.length;
           queue = queue.then(async () => {
             if (done) return;
+            if (firstRequestAt === undefined) { firstRequestAt=Date.now();this.options.log?.('speech_start',{id,model:this.model}); }
             const res = await this.fetchImpl(`${CARTESIA_API}/tts/bytes`, {
               method: 'POST', headers: this.headers(key),
               signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]),
@@ -102,7 +104,7 @@ export class CartesiaSpeaker {
               const bytes = Buffer.concat([carry, Buffer.from(chunk)]), even = bytes.length - bytes.length % 2;
               carry = bytes.subarray(even);
               if (even) {
-                if (!heard) this.options.log?.('speech_first_audio', { id, model: this.model });
+                if (!heard) this.options.log?.('speech_first_audio', { id, model: this.model, ms:Date.now()-firstRequestAt });
                 heard = true;
                 this.options.emit({ kind: 'speech', id, rate: RATE, pcm: bytes.subarray(0, even).toString('base64') });
               }

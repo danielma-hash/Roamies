@@ -10,6 +10,8 @@ import type { VoiceWorkspaceState, VoiceWorkspaceAction } from './browser-voice-
 import { renderRecipesWorkspace } from './browser-recipes-workspace.js';
 import type { RecipesWorkspaceAction } from './project-recipes.types.js';
 import type { ProjectRecipe } from './project-recipes.types.js';
+import { renderHealthWorkspace } from './browser-health-workspace.js';
+import type { EvidenceHealthSnapshot } from './evidence-health.types.js';
 
 export interface WorkspaceState {
   readonly sessions: readonly ClaudeSession[];
@@ -25,6 +27,7 @@ export interface WorkspaceState {
   readonly attention?: AttentionSnapshot;
   readonly voiceWorkspace?:VoiceWorkspaceState;
   readonly recipes?:readonly ProjectRecipe[];
+  readonly health?:EvidenceHealthSnapshot;
 }
 
 export type WorkspaceAction =
@@ -158,6 +161,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
   root.append(renderOperationsWorkspace({ ...state, cards:state.cards??[] }, send));
   root.append(renderVoiceWorkspace({ ...state.voiceWorkspace, entries:state.voiceWorkspace?.entries??[], busy:state.busy },send));
   root.append(renderRecipesWorkspace({recipes:state.recipes??[],busy:state.busy},send));
+  root.append(renderHealthWorkspace(state.health));
   return root;
 }
 
