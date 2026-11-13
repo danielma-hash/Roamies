@@ -242,3 +242,29 @@ html, body { height: 100%; background: transparent; }
   .frame.opening, .frame.shutting, .pane.enter > *, .pane.enter .list > li, .navi.ping, .item.leaving, .note, .arm[aria-pressed="true"] > .yes { animation: none; }
   .navi, .arm > span, .tab { transition: none; }
 }
+
+/* Readable mixed Hebrew and code in the work center. */
+.workspace { display: grid; gap: 14px; min-width: 0; }
+.workspace h2, .workspace h3, .workspace p { margin: 0; }
+.workspace-title { font-size: 18px; }
+.workspace-description, .workspace-session-updated, .workspace-session-project, .workspace-session-branch { font-size: 12px; opacity: .72; overflow-wrap: anywhere; }
+.workspace-search { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.workspace-search-label { display: grid; gap: 6px; flex: 1; font-size: 12px; }
+.workspace input[type=search], .workspace textarea, .workspace input[type=text], .workspace select { box-sizing: border-box; max-width: 100%; width: 100%; border: 1px solid #ffffff2a; border-radius: 9px; padding: 9px 11px; color: inherit; background: #0002; font: inherit; }
+.workspace-button { border: 1px solid #ffffff30; border-radius: 9px; background: #ffffff0c; color: inherit; padding: 8px 11px; font: inherit; font-size: 12px; cursor: pointer; }
+.workspace-button:hover { background: #ffffff20; }
+.workspace-button:disabled { opacity: .45; cursor: wait; }
+.workspace-button:focus-visible, .workspace input:focus-visible, .workspace textarea:focus-visible { outline: 2px solid #83e3d0; outline-offset: 3px; }
+.workspace-filter { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.workspace-sessions { display: grid; gap: 10px; }
+.workspace-session, .workspace-detail { border: 1px solid #ffffff1f; border-radius: 12px; padding: 14px; display: grid; gap: 8px; background: #ffffff05; }
+.workspace-session[data-selected=true] { border-color: #83e3d088; }
+.workspace-session-title { font-size: 14px; overflow-wrap: anywhere; }
+.workspace-session-status { width: fit-content; border-radius: 6px; padding: 3px 7px; background: #ffffff10; font-size: 11px; }
+.workspace-session[data-status=waiting] .workspace-session-status { color: #f5cb80; }
+.workspace-actions, .workspace-fork-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.workspace-message { padding: 10px 0; border-block-end: 1px solid #ffffff13; }
+.workspace-message-role { opacity: .6; font-size: 11px; }
+.workspace-message-text, .workspace-handoff-text { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; line-height: 1.65; font: inherit; }
+.workspace-handoff-text { min-height: 180px; resize: vertical; }
+.workspace-feedback, .workspace-note, .workspace-fork-note, .workspace-empty { font-size: 12px; line-height: 1.6; }
