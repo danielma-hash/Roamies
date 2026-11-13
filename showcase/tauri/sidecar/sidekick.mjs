@@ -1798,7 +1798,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
-  else if (m.type === 'workspace') workspace.handle(m).catch(() => panelNote('הפעולה לא הושלמה.', true));
+  else if (m.type === 'workspace') {
+    if(m.action==='sessions.fork'&&(!config.allowActions||busy))panelNote('ליצירת עותק יש להפעיל פעולות בהגדרות ולסיים את הפעולה הנוכחית.',true);
+    else workspace.handle(m).catch(() => panelNote('הפעולה לא הושלמה.', true));
+  }
   else if (m.type === 'panel_open') { sonioxKeyLoaded.then(() => { if (panelOpen) panel(); }); panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
   else if (m.type === 'diagnostics') { shellInfo?.(m); shellInfo = null; }
   else if (m.type === 'panel_closed') { panelOpen = false; logLine('panel_closed', { why: String(m.why ?? ''), ms: Date.now() - panelAt }); }
