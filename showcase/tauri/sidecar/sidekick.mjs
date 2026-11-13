@@ -51,6 +51,7 @@ import { TaskCardsService } from './task-cards.service.ts';
 import { AttentionService } from './attention.service.ts';
 import { PronunciationDictionaryService } from './pronunciation-dictionary.service.ts';
 import { EvidenceHealthService } from './evidence-health.service.ts';
+import { ConversationWorkspaceService } from './conversation-workspace.service.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1311,7 +1312,15 @@ const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task
 const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
 speech.setPronunciationDictionary((text) => pronunciation.apply(text));
 let reviewedArea = null;
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}}, (text)=>enqueue(text,{readOnly:true}));
+const conversationHistory = new ConversationWorkspaceService(workspaceData);
+async function resumeConversation(id) {
+  if(busy || queued)throw new Error('יש לסיים או לעצור את הפעולה הנוכחית לפני מעבר שיחה.');
+  const selected=await conversationHistory.read(id);
+  syncSession();await flushWrites();
+  if(session?.messages.length){const saved=await conversationHistory.read(session.id);if(JSON.stringify(saved.messages)!==JSON.stringify(session.messages))throw new Error('שמירת השיחה הנוכחית טרם הושלמה. לא בוצע מעבר.');}
+  session=selected;liveBlocks.clear();agent=null;pendingFold=null;lastInput=null;quizDone=null;menu();
+}
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}}, (text)=>enqueue(text,{readOnly:true}),conversationHistory,resumeConversation);
 workspace.initialize().then(() => workspace.poll());
 setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
@@ -1324,7 +1333,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
-    workspace: {...workspace.snapshot(),health:evidenceHealth.snapshot()},
+    workspace: {...workspace.snapshot(),health:evidenceHealth.snapshot(),currentConversationId:session?.id},
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,

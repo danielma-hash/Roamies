@@ -83,6 +83,11 @@ export const saveSession = (s) => (s?.messages.length ? writeJson(path.join(SESS
 export async function pruneSessions() {
   let names;
   try { names = (await fs.readdir(SESSIONS)).filter((n) => SESSION_FILE.test(n)).sort(); } catch { return; }
+  let bookmarks = [];
+  try { bookmarks = JSON.parse(await fs.readFile(path.join(DIR, 'bookmarks.json'), 'utf8')); if(!Array.isArray(bookmarks))return; }
+  catch (error) { if(error.code !== 'ENOENT')return; }
+  const pinned = new Set(bookmarks.filter((id)=>typeof id==='string').map((id)=>`${id}.json`));
+  names = names.filter((name)=>!pinned.has(name));
   const drop = names.slice(0, Math.max(0, names.length - KEEP_SESSIONS));
   if (!drop.length) return;
   console.error(`[store] pruning ${drop.length} old session(s), keeping ${KEEP_SESSIONS}`);

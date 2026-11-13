@@ -373,3 +373,16 @@ console.log('store tests: all passed');
   assert.equal(fs.readFileSync(mem, 'utf8'), newer, 'newer memory.json left untouched');
   console.log('downgrade guard: passed');
 }
+
+// A pinned old conversation survives normal history pruning.
+{
+  const sessions = path.join(S.DIR, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  const pinned = '20000101-000000-aaaaaa';
+  fs.writeFileSync(path.join(sessions, `${pinned}.json`), JSON.stringify({ version: 1, id: pinned, messages: [] }));
+  fs.writeFileSync(path.join(S.DIR, 'bookmarks.json'), JSON.stringify([pinned]));
+  for (let i = 0; i < 65; i++) fs.writeFileSync(path.join(sessions, `20260101-${String(i).padStart(6,'0')}-bbbbbb.json`), '{}');
+  await S.pruneSessions();
+  assert.ok(fs.existsSync(path.join(sessions, `${pinned}.json`)), 'bookmarked history must never be pruned');
+  console.log('bookmarked conversation pruning: passed');
+}
