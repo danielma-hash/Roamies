@@ -47,6 +47,10 @@ export type WorkspaceAction =
 const STATUS: Readonly<Record<ClaudeSession['status'], string>> = {
   running: 'עובד כעת', waiting: 'ממתין לך', idle: 'ממתין להמשך', ended: 'הסתיים', unknown: 'מצב חי לא ידוע',
 };
+const SECTIONS = [['sessions','Claude'],['history','השיחות שלי'],['knowledge','ASM'],['operations','משימות ועדכונים'],['voice','הגייה ותמלול'],['recipes','מתכונים'],['health','מצב המערכת']] as const;
+type Section = typeof SECTIONS[number][0];
+let activeSection:Section='sessions';
+export function selectSection(section:Section):void{activeSection=section;}
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -67,6 +71,16 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
   const root = element('section', 'workspace');
   root.dir = 'rtl'; root.lang = 'he'; root.setAttribute('aria-label', 'מרכז שיחות Claude');
   root.setAttribute('aria-busy', String(Boolean(state.busy)));
+  const navigation=element('nav','workspace-navigation');navigation.setAttribute('aria-label','תחומים במרכז העבודה');
+  for(const [id,label] of SECTIONS){const tab=button(label,()=>{activeSection=id;root.replaceWith(render(state,send));});tab.setAttribute('aria-pressed',String(activeSection===id));navigation.append(tab);}
+  root.append(navigation);
+  if(state.error&&activeSection!=='sessions'){const error=element('p','workspace-feedback',state.error);error.setAttribute('role','alert');root.append(error);}
+  if(activeSection==='history'){root.append(renderConversationsWorkspace({...state.history,busy:state.busy,currentConversationId:state.currentConversationId},send));return root;}
+  if(activeSection==='knowledge'){root.append(renderKnowledgeWorkspace(state,(message)=>send(message as WorkspaceAction)));return root;}
+  if(activeSection==='operations'){root.append(renderOperationsWorkspace({...state,cards:state.cards??[]},send));return root;}
+  if(activeSection==='voice'){root.append(renderVoiceWorkspace({...state.voiceWorkspace,entries:state.voiceWorkspace?.entries??[],busy:state.busy},send));return root;}
+  if(activeSection==='recipes'){root.append(renderRecipesWorkspace({recipes:state.recipes??[],busy:state.busy,message:state.message},send));return root;}
+  if(activeSection==='health'){root.append(renderHealthWorkspace(state.health));return root;}
   root.append(element('h2', 'workspace-title', 'שיחות Claude'),
     element('p', 'workspace-description', 'שיחות מקומיות, הודעות אחרונות והכנת המשך עבודה.'));
 
@@ -162,17 +176,11 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
       element('p', 'workspace-note', 'אפשר לבחור ולהעתיק את הטקסט לשיחה שבה תרצה להמשיך.'));
     root.append(handoff);
   }
-  root.append(renderKnowledgeWorkspace(state, (message) => send(message as WorkspaceAction)));
-  root.append(renderOperationsWorkspace({ ...state, cards:state.cards??[] }, send));
-  root.append(renderVoiceWorkspace({ ...state.voiceWorkspace, entries:state.voiceWorkspace?.entries??[], busy:state.busy },send));
-  root.append(renderRecipesWorkspace({recipes:state.recipes??[],busy:state.busy},send));
-  root.append(renderHealthWorkspace(state.health));
-  root.append(renderConversationsWorkspace({...state.history,busy:state.busy,currentConversationId:state.currentConversationId},send));
   return root;
 }
 
 declare global {
-  interface Window { RoamiesWorkspace: { readonly render: typeof render }; }
+  interface Window { RoamiesWorkspace: { readonly render: typeof render; readonly selectSection:typeof selectSection }; }
 }
 
-if (typeof window !== 'undefined') window.RoamiesWorkspace = { render };
+if (typeof window !== 'undefined') window.RoamiesWorkspace = { render, selectSection };

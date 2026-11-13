@@ -268,3 +268,6 @@ html, body { height: 100%; background: transparent; }
 .workspace-message-text, .workspace-handoff-text { white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; line-height: 1.65; font: inherit; }
 .workspace-handoff-text { min-height: 180px; resize: vertical; }
 .workspace-feedback, .workspace-note, .workspace-fork-note, .workspace-empty { font-size: 12px; line-height: 1.6; }
+.workspace-navigation { display:flex; flex-wrap:wrap; gap:6px; padding-block-end:12px; border-block-end:1px solid #ffffff1a; }
+.workspace-navigation button[aria-pressed=true] { background:#83e3d026; border-color:#83e3d080; }
+.workspace input[type=url] { box-sizing:border-box; max-width:100%; width:100%; padding:9px 11px; border:1px solid #ffffff2a; border-radius:9px; color:inherit; background:#0002; font:inherit; font-size:12px; }
