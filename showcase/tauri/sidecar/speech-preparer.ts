@@ -21,6 +21,9 @@ const CLITICS: Readonly<Record<string, string>> = {
 const digits = (text: string, hebrew = true): string => [...text.replace(/\D/g, '')].map((digit) => (hebrew ? DIGITS : ENGLISH_DIGITS)[Number(digit)]).join(' ');
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const ABBREVIATION = new RegExp(`(?<![\\p{L}\\p{M}])(ו?[בכלמשה]?[־-]?)(${Object.keys(ABBREVIATIONS).sort((a, b) => b.length - a.length).map(escape).join('|')})(?![\\p{L}\\p{M}])`, 'gu');
+const JARVIS_NAME = /(?<![\p{L}\p{M}\p{N}_])(ו?[בכלמהש]?[־-]?)(?:ג[׳'’]?א?רו{1,2}יס|jarvis)(?![\p{L}\p{M}\p{N}_])/giu;
+const JARVIS_ENGLISH = /(?<![\p{L}\p{M}\p{N}_])Jarvis(?![\p{L}\p{M}\p{N}_]|\.[A-Za-z])/gu;
+const JARVIS_IPA = '<<ˈ|dʒ|ɑ|ɹ|v|ɪ|s>>';
 
 export class SpeechPreparer {
   normalize(text: string): string {
@@ -39,6 +42,9 @@ export class SpeechPreparer {
       .replace(/\*\*|__|~~|[*_`]/g, '')
       .replace(/[\p{Extended_Pictographic}\u{1f1e6}-\u{1f1ff}\ufe0f\u200d\u20e3]/gu, '')
       .replace(/([א-ת])["״]([א-ת])/g, '$1״$2').replace(/([א-ת])['׳]/g, '$1׳')
+      // The name is English even when the reply spells it in Hebrew. Keep
+      // canonical text here; provider phonemes are injected after segmentation.
+      .replace(JARVIS_NAME, '$1Jarvis')
       .replace(ABBREVIATION, (_match, prefix: string, word: string) => `${prefix}${ABBREVIATIONS[word]}`)
       .replace(/₪\s*(\d[\d,]*(?:\.\d+)?)/g, `$1 ${hebrew ? 'שקלים' : 'shekels'}`)
       .replace(/(\d[\d,]*(?:\.\d+)?)\s*₪/g, `$1 ${hebrew ? 'שקלים' : 'shekels'}`)
@@ -86,7 +92,8 @@ export class SpeechPreparer {
       if (previous?.language === language) previous.transcript += `${prefix ? ' ' : ''}${prefix}${run}`;
       else segments.push({ language, transcript: `${prefix}${run}` });
     }
-    return segments.map((segment) => ({ ...segment, transcript: segment.transcript.trim() }))
+    return segments.map((segment) => ({ ...segment, transcript: (segment.language === 'en'
+      ? segment.transcript.replace(JARVIS_ENGLISH, JARVIS_IPA) : segment.transcript).trim() }))
       .filter((segment) => /[\p{L}\p{N}]/u.test(segment.transcript));
   }
 }

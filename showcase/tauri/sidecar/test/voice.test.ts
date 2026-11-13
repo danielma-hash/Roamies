@@ -55,6 +55,19 @@ describe('Cartesia output', () => {
     ]);
     expect(new Set(calls.map((call) => call.voice))).toEqual(new Set([CARTESIA_VOICES[5][0]]));
   });
+  it('sends the Hebrew-written Jarvis name to English TTS with the requested pronunciation', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const speaker = new CartesiaSpeaker({ emit: () => {}, fetchImpl: async (_url, options) => {
+      calls.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
+      return new Response(new Uint8Array([1, 2]));
+    } });
+    speaker.setKey('test');
+    const turn = speaker.start()!; turn.say('שלום, אני ג׳ארוויס.'); turn.end();
+    await tick();
+    expect(calls.map(({ transcript, language }) => [transcript, language])).toEqual([
+      ['שלום, אני', 'he'], ['<<ˈ|dʒ|ɑ|ɹ|v|ɪ|s>>.', 'en'],
+    ]);
+  });
   it('reports HTTP failures once and does not synthesize queued sentences afterward', async () => {
     let calls = 0, errors = 0;
     const speaker = new CartesiaSpeaker({ emit: () => {}, onProblem: () => { errors++; }, fetchImpl: async () => { calls++; return new Response('', { status: 401 }); } });

@@ -16,7 +16,7 @@ describe('Hebrew UI and voice', () => {
     for (const value of ['https://example.com?a=1', '/Users/daniel/file.ts', 'npm run build', 'sk_car_test_123', 'שלום, קוד API בגרסה 3.6']) expect(translate(value)).toBe(value);
   });
   it('prepares Hebrew speech without changing what is displayed', () => {
-    expect(speakableHebrew('[warm] JARVIS: המחיר הוא 25 ש״ח.')).toBe('JARVIS. המחיר הוא 25 שקלים.');
+    expect(speakableHebrew('[warm] JARVIS: המחיר הוא 25 ש״ח.')).toBe('Jarvis. המחיר הוא 25 שקלים.');
     expect(speakableHebrew('[warm] At your service.')).toBe('לשירותך.');
     expect(HEBREW_INSTRUCTIONS).toContain('פנה לדניאל בזכר יחיד');
     expect(HEBREW_INSTRUCTIONS).toContain('עברית ישראלית טבעית');
