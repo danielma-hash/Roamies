@@ -271,3 +271,10 @@ html, body { height: 100%; background: transparent; }
 .workspace-navigation { display:flex; flex-wrap:wrap; gap:6px; padding-block-end:12px; border-block-end:1px solid #ffffff1a; }
 .workspace-navigation button[aria-pressed=true] { background:#83e3d026; border-color:#83e3d080; }
 .workspace input[type=url] { box-sizing:border-box; max-width:100%; width:100%; padding:9px 11px; border:1px solid #ffffff2a; border-radius:9px; color:inherit; background:#0002; font:inherit; font-size:12px; }
+
+/* Claude control shares the workspace's readable RTL surfaces. */
+label.workspace-control { display: grid; gap: 6px; margin-block: 10px; }
+input.workspace-control, textarea.workspace-control { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid var(--border, #5555); border-radius: 10px; background: transparent; color: inherit; font: inherit; }
+textarea.workspace-control { min-height: 76px; resize: vertical; }
+p.workspace-control { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+summary.workspace-control { cursor: pointer; padding-block: 10px; }
