@@ -5,9 +5,11 @@ import { AsmMemoryService } from './asm-memory.service.js';
 import type { AsmMemoryCitation } from './asm-memory.types.js';
 import { TaskCardsService } from './task-cards.service.js';
 import type { TaskCard } from './task-cards.service.js';
+import { AttentionService } from './attention.service.js';
+import type { AttentionSnapshot, AttentionEvent } from './attention.types.js';
 import type { ClaudeSessionList, ClaudeTranscript } from './claude-sessions.types.js';
 
-const request = z.object({ action: z.enum(['sessions.list', 'sessions.read', 'sessions.handoff', 'sessions.fork', 'sessions.observe', 'memory.search','tasks.add','tasks.refresh']), query: z.string().max(200).optional(), id: z.string().max(100).optional(), scope: z.enum(['company','personal']).optional(), url:z.string().max(1000).optional(),monday:z.string().max(1000).optional() });
+const request = z.object({ action: z.enum(['sessions.list', 'sessions.read', 'sessions.handoff', 'sessions.fork', 'sessions.observe', 'memory.search','tasks.add','tasks.refresh','attention.preferences','attention.dismiss']), query: z.string().max(200).optional(), id: z.string().max(100).optional(), scope: z.enum(['company','personal']).optional(), url:z.string().max(1000).optional(),monday:z.string().max(1000).optional(), quiet:z.boolean().optional(),focus:z.boolean().optional() });
 export interface WorkspaceState extends ClaudeSessionList {
   readonly selected?: ClaudeTranscript;
   readonly handoff?: string;
@@ -16,10 +18,22 @@ export interface WorkspaceState extends ClaudeSessionList {
   readonly observing?: boolean;
   readonly citations?: readonly AsmMemoryCitation[];
   readonly cards?: readonly TaskCard[];
+  readonly attention?: AttentionSnapshot;
 }
 export class WorkspaceController {
   private current: WorkspaceState = { available: true, sessions: [] };
-  constructor(private readonly sessions: ClaudeSessionsService, private readonly changed: () => void, private readonly hooks?: ClaudeHooksService, private readonly memory?: AsmMemoryService, private readonly tasks?: TaskCardsService) {}
+  private polling = false;
+  private query = '';
+  private nextTaskRefresh = Date.now()+300_000;
+  private taskCursor = 0;
+  constructor(private readonly sessions: ClaudeSessionsService, private readonly changed: () => void, private readonly hooks?: ClaudeHooksService, private readonly memory?: AsmMemoryService, private readonly tasks?: TaskCardsService, private readonly attention?: AttentionService, private readonly notify: (events:readonly AttentionEvent[])=>void = ()=>{}) {}
+  async poll():Promise<void>{
+    if(this.polling||this.current.busy)return;this.polling=true;
+    try{
+      if(this.tasks&&Date.now()>=this.nextTaskRefresh){this.nextTaskRefresh=Date.now()+60_000;const cards=this.tasks.list();if(cards.length){const card=cards[this.taskCursor++%cards.length];await this.tasks.track(card.url,card.monday);}}
+      const all=await this.sessions.list();const events=await this.attention?.update(all.sessions,this.tasks?.list()??[]);this.current={...this.current,...all,cards:this.tasks?.list()??[],sessions:all.sessions.filter(s=>`${s.title} ${s.cwd} ${s.branch}`.toLocaleLowerCase().includes(this.query.toLocaleLowerCase())),attention:await this.attention?.snapshot()};if(events?.length)this.notify(events);this.changed();
+    }catch{/* An observer failure never interrupts current work. */}finally{this.polling=false;}
+  }
   async initialize():Promise<void>{try{await this.tasks?.load();this.current={...this.current,cards:this.tasks?.list()??[]};}catch(error){this.current={...this.current,error:error instanceof Error?error.message:'טעינת מרכז העבודה נכשלה.'};}this.changed();}
   snapshot(): WorkspaceState { return this.current; }
   async handle(value: unknown): Promise<void> {
@@ -29,9 +43,11 @@ export class WorkspaceController {
     const input = parsed.data;
     this.current = { ...this.current, busy: true, error: undefined }; this.changed();
     try {
+      if(input.action==='attention.preferences'&&this.attention){await this.attention.setPreferences({quiet:input.quiet,focus:input.focus});this.current={...this.current,attention:await this.attention.snapshot()};return;}
+      if(input.action==='attention.dismiss'&&input.id&&this.attention){await this.attention.dismiss(input.id);this.current={...this.current,attention:await this.attention.snapshot()};return;}
       if ((input.action==='tasks.add'||input.action==='tasks.refresh')&&input.url&&this.tasks){this.current={...this.current,cards:await this.tasks.track(input.url,input.monday)};return;}
       if (input.action === 'memory.search' && input.scope && this.memory) { this.current = { ...this.current, citations: await this.memory.search(input.query ?? '', { scope: input.scope }) }; return; }
-      if (input.action === 'sessions.list') this.current = { ...this.current, ...await this.sessions.list({ query: input.query }), observing: (await this.hooks?.status())?.installed };
+      if (input.action === 'sessions.list') { this.query=input.query??'';this.current = { ...this.current, ...await this.sessions.list({ query: input.query }), observing: (await this.hooks?.status())?.installed }; }
       else if (input.action === 'sessions.observe' && this.hooks) { await this.hooks.install(); this.current = { ...this.current, observing: true, message: 'המעקב הופעל. שיחות Claude חדשות ישלחו אירועי מצב בלבד.' }; }
       else if (input.id) {
         if (input.action === 'sessions.read') this.current = { ...this.current, selected: await this.sessions.read(input.id), handoff: undefined };
