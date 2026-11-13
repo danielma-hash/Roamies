@@ -1,5 +1,5 @@
 // The panel that opens from the menu bar or tray icon: a sidebar of pages. Home (what's going on) and Memory,
-// then a page per group of settings: Model, Appearance, Voice, Behavior and About.
+// then a page per group of settings: Model, Appearance, Voice, Behavior.
 // The sidecar owns every value: it sends the whole state when the panel opens and after each change, and the
 // panel sends back the same actions the menu used ({type:'menu', id}). Opened in a plain browser it shows a
 // labelled preview with sample data instead.
@@ -232,8 +232,12 @@
   let lastFrame = 0;
   function loop(now) {
     requestAnimationFrame(loop);
-    const dt = Math.min(1 / 30, (now - (lastFrame || now)) / 1000); lastFrame = now;
-    if (document.hidden || $('frame').classList.contains('shut')) return;
+    // Small previews need only 30 fps, even on a 120 Hz display. Keep elapsed time for smooth motion.
+    if (document.hidden || $('frame').classList.contains('shut')) { lastFrame = 0; return; }
+    const elapsed = now - lastFrame;
+    if (lastFrame && elapsed < 1000 / 30 - 0.5) return;
+    const dt = lastFrame ? Math.min(0.1, elapsed / 1000) : 1 / 30;
+    lastFrame = now;
     for (const { me, canvas } of live) if (canvas.isConnected && canvas.offsetParent) me.step(dt);
   }
   requestAnimationFrame(loop);
