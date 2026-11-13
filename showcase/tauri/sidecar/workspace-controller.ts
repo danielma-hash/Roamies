@@ -42,7 +42,14 @@ export class WorkspaceController {
   async poll():Promise<void>{
     if(this.polling||this.current.busy)return;this.polling=true;
     try{
-      if(this.tasks&&Date.now()>=this.nextTaskRefresh){this.nextTaskRefresh=Date.now()+60_000;const cards=this.tasks.list();if(cards.length){const card=cards[this.taskCursor++%cards.length];await this.tasks.track(card.url,card.monday);}}
+      if(this.tasks&&Date.now()>=this.nextTaskRefresh){
+        this.nextTaskRefresh=Date.now()+60_000;const cards=this.tasks.list();
+        if(cards.length){
+          const card=cards[this.taskCursor++%cards.length];
+          try{await this.tasks.track(card.url,card.monday);}
+          catch(error){this.current={...this.current,error:error instanceof Error?error.message:'רענון כרטיס העבודה נכשל.'};this.changed();}
+        }
+      }
       const all=await this.sessions.list();const events=await this.attention?.update(all.sessions,this.tasks?.list()??[]);this.current={...this.current,...all,cards:this.tasks?.list()??[],sessions:all.sessions.filter(s=>`${s.title} ${s.cwd} ${s.branch}`.toLocaleLowerCase().includes(this.query.toLocaleLowerCase())),attention:await this.attention?.snapshot()};if(events?.length)this.notify(events);this.changed();
     }catch{/* An observer failure never interrupts current work. */}finally{this.polling=false;}
   }

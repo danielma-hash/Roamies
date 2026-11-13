@@ -10,6 +10,7 @@ export type TaskCard = z.infer<typeof cardSchema> & { readonly observedAt: numbe
 export class TaskCardsError extends Error { constructor(message: string) { super(message); this.name = 'TaskCardsError'; } }
 export class TaskCardsService {
   private cards: readonly TaskCard[] = [];
+  private updates: Promise<unknown> = Promise.resolve();
   constructor(private readonly readPr: (repo: string, number: string) => Promise<string> = async (repo, number) => {
     const result = await execute('gh', ['pr','view',number,'--repo',repo,'--json','title,url,state,headRefName,headRefOid,statusCheckRollup'], { timeout: 20_000, maxBuffer: 1024 * 1024 }); return result.stdout;
   }, private readonly filePath?: string) {}
@@ -26,11 +27,16 @@ export class TaskCardsService {
   }
   list(): readonly TaskCard[] { return this.cards; }
   async track(url:string,monday?:string):Promise<readonly TaskCard[]> {
-    const previous=this.cards.find(card=>card.url===url);
-    const card=await this.read(url,monday??previous?.monday);
-    const next=[card,...this.cards.filter(item=>item.url!==card.url)].slice(0,50);
-    if(this.filePath){await mkdir(dirname(this.filePath),{recursive:true,mode:0o700});const temporary=`${this.filePath}.${randomUUID()}.tmp`;await writeFile(temporary,JSON.stringify(next),{mode:0o600,flag:'wx'});await rename(temporary,this.filePath);}
-    this.cards=next;return next;
+    const update=async()=>{
+      const previous=this.cards.find(card=>card.url===url);
+      const card=await this.read(url,monday??previous?.monday);
+      const next=[card,...this.cards.filter(item=>item.url!==card.url)].slice(0,50);
+      if(this.filePath){await mkdir(dirname(this.filePath),{recursive:true,mode:0o700});const temporary=`${this.filePath}.${randomUUID()}.tmp`;await writeFile(temporary,JSON.stringify(next),{mode:0o600,flag:'wx'});await rename(temporary,this.filePath);}
+      this.cards=next;return next;
+    };
+    const queued=this.updates.then(update,update);
+    this.updates=queued.catch(()=>undefined);
+    return queued;
   }
   async read(url: string, monday?: string): Promise<TaskCard> {
     const match = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9][0-9]*)\/?$/.exec(url);
