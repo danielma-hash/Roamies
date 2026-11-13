@@ -19,6 +19,9 @@ rm -rf dist && mkdir -p dist/node_modules/@bokuweb
   --banner:js="import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" \
   --log-level=warning
 cp -R node_modules/@bokuweb/zstd-wasm dist/node_modules/@bokuweb/
+"$ES" claude-events-entry.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/claude-events.mjs --external:@anthropic-ai/claude-agent-sdk --log-level=warning
+mkdir -p ../dist/panel
+"$ES" browser-workspace.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=../dist/panel/workspace.js --log-level=warning
 # The recorded beats (beats/make.mjs): the audio and its index, not the script.
 mkdir -p dist/beats && cp beats/index.json beats/*.pcm dist/beats/
 echo '{"type":"module"}' > dist/package.json

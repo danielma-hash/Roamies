@@ -40,6 +40,10 @@ import { canCircle, canSnap, hasHands, hasHotkeys, hasVoice, linuxSession, micTr
 import { keyCards, keyKinds, signInCards } from './providers.mjs';
 import { activityLogs, buildReport, redact, reportDir, reportName, reveal, run, scrubConfig, tail } from './diagnostics.mjs';
 import { detailsText, explain } from './errors.mjs';
+import { fileURLToPath } from 'node:url';
+import { ClaudeSessionsService } from './claude-sessions.service.ts';
+import { ClaudeHooksService } from './claude-hooks.service.ts';
+import { WorkspaceController } from './workspace-controller.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1288,6 +1292,8 @@ function menu() {
 // state when it opens and gets it again after each change, at most once per tick, only while it's open.
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
+const claudeSessions = new ClaudeSessionsService();
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }));
 function panel() {
   if (!panelOpen || panelQueued) return;
   panelQueued = true;
@@ -1298,6 +1304,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
+    workspace: workspace.snapshot(),
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,
@@ -1758,6 +1765,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'workspace') workspace.handle(m).catch(() => panelNote('הפעולה לא הושלמה.', true));
   else if (m.type === 'panel_open') { sonioxKeyLoaded.then(() => { if (panelOpen) panel(); }); panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
   else if (m.type === 'diagnostics') { shellInfo?.(m); shellInfo = null; }
   else if (m.type === 'panel_closed') { panelOpen = false; logLine('panel_closed', { why: String(m.why ?? ''), ms: Date.now() - panelAt }); }
