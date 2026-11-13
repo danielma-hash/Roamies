@@ -6,7 +6,7 @@
 // out: {type:'menu', items} {type:'ui', msg} {type:'overlays', ids}
 import { Agent } from '@kenkaiiii/gg-agent';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
-import { SAFE, checkDrawAction, checkLink, redactArgs } from './safety.mjs';
+import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
 import { agentEvents, stallWatch } from './agentstream.mjs';
 import {
   AUTH_PROVIDERS, AuthStorage, OPENAI_CHATGPT_KEY, apiKeyStorageKeys, claudeCodeEnv, dualAuthProvider, getAuthStorageKeys, getContextWindow, getDefaultModel, getModel,
@@ -46,6 +46,7 @@ import { ClaudeHooksService } from './claude-hooks.service.ts';
 import { WorkspaceController } from './workspace-controller.ts';
 import { AsmMemoryService } from './asm-memory.service.ts';
 import { createAsmTool } from './asm-tool.ts';
+import { createWorkspaceTools } from './workspace-tools.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1295,6 +1296,7 @@ function menu() {
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
+tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions, confirm: async (text) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] })) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory);
