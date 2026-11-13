@@ -1,6 +1,9 @@
 import type { ClaudeSession, ClaudeTranscript } from './claude-sessions.types.js';
 import { renderKnowledgeWorkspace } from './browser-knowledge-workspace.js';
 import type { AsmMemoryCitation } from './asm-memory.types.js';
+import { renderOperationsWorkspace } from './browser-operations-workspace.js';
+import type { OperationsWorkspaceAction } from './browser-operations-workspace.js';
+import type { TaskCard } from './task-cards.service.js';
 
 export interface WorkspaceState {
   readonly sessions: readonly ClaudeSession[];
@@ -12,9 +15,11 @@ export interface WorkspaceState {
   readonly error?: string;
   readonly observing?: boolean;
   readonly citations?: readonly AsmMemoryCitation[];
+  readonly cards?: readonly TaskCard[];
 }
 
 export type WorkspaceAction =
+  | OperationsWorkspaceAction
   | { readonly type: 'workspace'; readonly action: 'memory.search'; readonly query: string; readonly scope: 'company'|'personal' }
   | { readonly type: 'workspace'; readonly action: 'sessions.list'; readonly query: string }
   | { readonly type: 'workspace'; readonly action: 'sessions.observe' }
@@ -139,6 +144,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
     root.append(handoff);
   }
   root.append(renderKnowledgeWorkspace(state, (message) => send(message as WorkspaceAction)));
+  root.append(renderOperationsWorkspace({ ...state, cards:state.cards??[] }, send));
   return root;
 }
 
