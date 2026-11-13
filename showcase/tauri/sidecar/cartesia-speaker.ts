@@ -29,6 +29,7 @@ export class CartesiaSpeaker {
   private current: SpokenTurn | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly preparer = new SpeechPreparer();
+  private pronunciation: (text: string) => string = (text) => text;
 
   constructor(private readonly options: SpeakerOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -40,6 +41,7 @@ export class CartesiaSpeaker {
   get ready(): number { return 0; }
   setModel(_model: string): void {}
   setVoice(voice: string): void { this.voice = voice || DEFAULT_VOICE; }
+  setPronunciationDictionary(apply: (text: string) => string): void { this.pronunciation = apply; }
   setKey(key: string | undefined): void {
     if (this.key !== (key || undefined)) this.stop();
     this.key = key || undefined;
@@ -79,7 +81,7 @@ export class CartesiaSpeaker {
       say: (text) => {
         if (done || ended) return;
         // Fish Audio's performance cues aren't Cartesia's text syntax.
-        const segments = this.preparer.segment(speakableHebrew(text));
+        const segments = this.preparer.segment(speakableHebrew(this.pronunciation(text)));
         for (const { transcript, language } of segments) {
           chars += transcript.length;
           queue = queue.then(async () => {
