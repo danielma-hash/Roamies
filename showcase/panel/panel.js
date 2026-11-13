@@ -500,6 +500,8 @@
           ? (v.download.status === 'downloading' ? `Downloading the voice model… ${v.download.pct}%` : v.download.status === 'error' ? 'The download failed' : `Needs a ${v.download.size} download`)
           : v.keys ? `Hold ${v.keys} to talk` : 'Press your talk shortcut to talk', v.on, () => act('voice'), 'voice'),
         v.download && v.download.status !== 'downloading' ? el('div', { className: 'links' }, link(v.download.status === 'error' ? 'Retry the download' : `Download (${v.download.size})`, () => act('voicedl'), { k: 'voicedl' })) : null,
+        v.mac ? toggle('מילת הפעלה', 'אמרו ״היי ג׳ארוויס״ או Hey Jarvis. הזיהוי הראשוני מתבצע במחשב.', v.wakeWord, () => act('wakeword'), 'wakeword') : null,
+        v.wakeProblem ? el('p', { className: 'why', role: 'status', textContent: v.wakeProblem }) : null,
         v.mac ? toggle('Mute Mac while talking', 'Other sounds go quiet while you talk', v.mute, () => act('mutetalk'), 'mutetalk') : null) : null,
     ];
   }
