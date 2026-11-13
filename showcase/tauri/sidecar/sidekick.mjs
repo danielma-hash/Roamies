@@ -48,6 +48,7 @@ import { AsmMemoryService } from './asm-memory.service.ts';
 import { createAsmTool } from './asm-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
 import { TaskCardsService } from './task-cards.service.ts';
+import { AttentionService } from './attention.service.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1302,8 +1303,9 @@ const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
 const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards);
-workspace.initialize();
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); });
+workspace.initialize().then(() => workspace.poll());
+setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
   if (!panelOpen || panelQueued) return;
   panelQueued = true;

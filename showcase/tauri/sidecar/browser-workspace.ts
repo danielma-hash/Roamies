@@ -4,6 +4,7 @@ import type { AsmMemoryCitation } from './asm-memory.types.js';
 import { renderOperationsWorkspace } from './browser-operations-workspace.js';
 import type { OperationsWorkspaceAction } from './browser-operations-workspace.js';
 import type { TaskCard } from './task-cards.service.js';
+import type { AttentionSnapshot } from './attention.types.js';
 
 export interface WorkspaceState {
   readonly sessions: readonly ClaudeSession[];
@@ -16,6 +17,7 @@ export interface WorkspaceState {
   readonly observing?: boolean;
   readonly citations?: readonly AsmMemoryCitation[];
   readonly cards?: readonly TaskCard[];
+  readonly attention?: AttentionSnapshot;
 }
 
 export type WorkspaceAction =

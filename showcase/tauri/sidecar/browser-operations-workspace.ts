@@ -1,7 +1,9 @@
 import type { TaskCard } from './task-cards.service.js';
+import type { AttentionEvent, AttentionSnapshot } from './attention.types.js';
 
 export interface OperationsWorkspaceState {
   readonly cards: readonly TaskCard[];
+  readonly attention?: AttentionSnapshot;
   readonly error?: string;
   readonly busy?: boolean;
 }
@@ -17,6 +19,10 @@ const CHECKS: Readonly<Record<string, string>> = {
   IN_PROGRESS: 'פועלת', REQUESTED: 'התבקשה', WAITING: 'ממתינה', COMPLETED: 'הסתיימה ללא תוצאה זמינה',
   CANCELLED: 'בוטלה', TIMED_OUT: 'חרגה מהזמן', ACTION_REQUIRED: 'נדרשת פעולה',
   NEUTRAL: 'ניטרלית', SKIPPED: 'דולגה', STARTUP_FAILURE: 'כשלה בהפעלה',
+};
+const EVENTS: Readonly<Record<AttentionEvent['kind'], string>> = {
+  'session-waiting': 'שיחה ממתינה לך', 'session-ended': 'שיחה הסתיימה',
+  'checks-failed': 'בדיקות נכשלו', 'checks-passed': 'בדיקות עברו',
 };
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
@@ -86,5 +92,31 @@ export function renderOperationsWorkspace(state: OperationsWorkspaceState, send:
   }
   root.append(cards);
 
-  return root;
+  const attention = element('section', 'workspace-detail'); attention.setAttribute('aria-label', 'התראות');
+  attention.append(element('h3', 'workspace-detail-title', `התראות${state.attention ? ` (${state.attention.unread})` : ''}`));
+  const controls = element('div', 'workspace-actions');
+  const quietLabel = element('label', 'workspace-filter'); const quiet = element('input', 'workspace-filter-input');
+  quiet.type = 'checkbox'; quiet.checked = state.attention?.preferences.quiet ?? false;
+  quiet.disabled = !state.attention || Boolean(state.busy); quietLabel.append(quiet, document.createTextNode('מצב שקט'));
+  const focusLabel = element('label', 'workspace-filter'); const focus = element('input', 'workspace-filter-input');
+  focus.type = 'checkbox'; focus.checked = state.attention?.preferences.focus ?? false;
+  focus.disabled = !state.attention || Boolean(state.busy); focusLabel.append(focus, document.createTextNode('מצב מיקוד'));
+  const preferences = (): void => {
+    if (!state.busy && state.attention) send({ type: 'workspace', action: 'attention.preferences', quiet: quiet.checked, focus: focus.checked });
+  };
+  quiet.addEventListener('change', preferences); focus.addEventListener('change', preferences);
+  controls.append(quietLabel, focusLabel); attention.append(controls,
+    element('p', 'workspace-note', 'בשקט או במיקוד, העדכונים נשמרים כאן בלי להפריע.'));
+  const unread = state.attention?.events.filter((event) => event.dismissedAt === undefined).slice().reverse() ?? [];
+  if (!state.attention) attention.append(element('p', 'workspace-empty', 'ההתראות עדיין לא נטענו.'));
+  else if (!unread.length) attention.append(element('p', 'workspace-empty', 'אין עדכונים שממתינים לטיפול.'));
+  for (const event of unread) {
+    const item = element('article', 'workspace-message');
+    const title = element('p', 'workspace-message-text', event.title); title.dir = 'auto'; title.dataset.userContent = '';
+    item.append(element('h4', 'workspace-message-role', EVENTS[event.kind]), title,
+      button('סימון כנקרא', () => send({ type: 'workspace', action: 'attention.dismiss', id: event.id }), Boolean(state.busy)));
+    if (event.url) item.append(link('פתיחת PR', event.url, 'github'));
+    attention.append(item);
+  }
+  root.append(attention); return root;
 }
