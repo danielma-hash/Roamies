@@ -662,6 +662,8 @@
   window.__panel = (m) => {
     if (m.kind === 'state') {
       const first = !state; state = m.state;
+      const spoken = state.workspace?.voiceWorkspace;
+      if (spoken?.review && spoken.transcript && spoken.transcript !== ui.reviewedTranscript) { ui.reviewedTranscript = spoken.transcript; show('workspace'); }
       if (ui.arm && !document.querySelector(`[data-k="${CSS.escape(ui.arm)}"]`)) ui.arm = null;
       render(null, first);
     }

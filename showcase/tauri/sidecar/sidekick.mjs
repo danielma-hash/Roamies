@@ -49,6 +49,7 @@ import { createAsmTool } from './asm-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
 import { TaskCardsService } from './task-cards.service.ts';
 import { AttentionService } from './attention.service.ts';
+import { PronunciationDictionaryService } from './pronunciation-dictionary.service.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1303,7 +1304,10 @@ const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
 const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); });
+const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
+speech.setPronunciationDictionary((text) => pronunciation.apply(text));
+let reviewedArea = null;
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}});
 workspace.initialize().then(() => workspace.poll());
 setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
@@ -1406,7 +1410,9 @@ function onVoice(m) {
   else if (m.type === 'voice' && m.text?.trim()) {
     // Key release to the words arriving (mic tail and the recogniser finishing), to see what that step costs.
     if (typeof m.ms === 'number') logLine('voice_final', { ms: m.ms, via: String(m.via ?? ''), chars: m.text.trim().length });
-    onSpoken(m.text.trim(), m.area);
+    workspace.setTranscript(m.text.trim());
+    if(config.reviewTranscript){reviewedArea=m.area??null;send({type:'panel_show',tab:'workspace'});panelNote('אפשר לתקן את התמלול במרכז העבודה לפני שליחה.');}
+    else onSpoken(m.text.trim(), m.area);
   }
   else if (m.type === 'voice_state' && m.state === 'idle' && snap?.waitingVoice) snap.waitingVoice = false;
   else if (m.type === 'voice_error') {
