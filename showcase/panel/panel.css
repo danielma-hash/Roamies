@@ -7,7 +7,7 @@
   --group: 22px;    /* gap between groups */
   /* Type scale, four steps: the title, section heads, everything you read (descriptions, rows, empty
      states), and the small print (dates, hints, timestamps, labels, buttons). */
-  --t-head: 13px; --t-body: 12px; --t-small: 11px;
+  --t-head: 15px; --t-body: 14px; --t-small: 12px;
   /* Motion: the CRT switch-on when it opens, and the switch-off when it closes (main.rs waits --shut). */
   --open: 240ms; --shut: 150ms;
 }
@@ -17,55 +17,26 @@ html, body { height: 100%; background: transparent; }
 .frame {
   height: 100%; display: flex; flex-direction: column; overflow: hidden;
   background:
-    radial-gradient(circle at 50% 50%, rgba(80, 210, 190, 0.07) 0.9px, transparent 1.3px) 0 0 / 8px 8px,
+    radial-gradient(ellipse at top right, rgba(80, 210, 190, 0.08), transparent 65%),
     var(--bg);
   color: var(--ink);
   border: 1px solid var(--line-hi);
+  border-radius: 18px;
   transform-origin: 50% 0;
 }
 /* Above the icon (a taskbar at the bottom): it opens from its bottom edge. */
 .frame.from-bottom { transform-origin: 50% 100%; }
 
-/* Opening: a bright line at the icon's edge that opens out into the panel, like a CRT switching on. */
-.frame.opening { animation: crt-on var(--open) steps(8, end) both; }
-@keyframes crt-on {
-  0% { transform: scaleY(0.012); filter: brightness(2.6); opacity: 0.4; }
-  40% { transform: scaleY(1.01); filter: brightness(1.5); opacity: 1; }
-  100% { transform: none; filter: none; opacity: 1; }
-}
-/* Closing: it folds back into the line and goes dark. */
-.frame.shutting { animation: crt-off var(--shut) steps(5, end) both; pointer-events: none; }
-@keyframes crt-off {
-  0% { transform: none; filter: none; opacity: 1; }
-  60% { transform: scaleY(0.012); filter: brightness(2.6); opacity: 1; }
-  100% { transform: scaleY(0.012) scaleX(0); opacity: 0; }
-}
+/* Short, smooth transitions keep the panel readable while it opens or changes pages. */
+.frame.opening { animation: panel-in var(--open) var(--ease) both; }
+.frame.shutting { animation: panel-out var(--shut) ease-in both; pointer-events: none; }
 .frame.shut { opacity: 0; }
-
-/* Rows dissolve in through an LED dither, one after another from top to bottom, and nothing slides: a
-   quarter of the dots, then half (a checkerboard), then three quarters, then the whole row. --i: the row's
-   place, set by panel.js (capped, so a long list doesn't wait). */
-:root {
-  --d1: conic-gradient(#000 0 25%, transparent 0);
-  --d2: conic-gradient(#000 0 25%, transparent 0 50%, #000 0 75%, transparent 0);
-  --d3: conic-gradient(transparent 0 25%, #000 0);
-}
-.pane.enter > *, .pane.enter .list > li { animation: dissolve-in 200ms step-end both; animation-delay: calc(var(--i, 0) * 26ms); }
-@keyframes dissolve-in {
-  0% { opacity: 0; }
-  25% { opacity: 1; -webkit-mask: var(--d1) 0 0 / 2px 2px; mask: var(--d1) 0 0 / 2px 2px; }
-  50% { opacity: 1; -webkit-mask: var(--d2) 0 0 / 2px 2px; mask: var(--d2) 0 0 / 2px 2px; }
-  75% { opacity: 1; -webkit-mask: var(--d3) 0 0 / 2px 2px; mask: var(--d3) 0 0 / 2px 2px; }
-  100% { opacity: 1; -webkit-mask: none; mask: none; }
-}
-/* A row being taken away (forgotten, done, dropped) dissolves out the same way, then the list closes up. */
-.item.leaving { animation: dissolve-out 200ms step-end both; pointer-events: none; }
-@keyframes dissolve-out {
-  0% { -webkit-mask: var(--d3) 0 0 / 2px 2px; mask: var(--d3) 0 0 / 2px 2px; }
-  33% { -webkit-mask: var(--d2) 0 0 / 2px 2px; mask: var(--d2) 0 0 / 2px 2px; }
-  67% { -webkit-mask: var(--d1) 0 0 / 2px 2px; mask: var(--d1) 0 0 / 2px 2px; }
-  100% { opacity: 0; }
-}
+@keyframes panel-in { from { opacity: 0; transform: translateY(-5px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes panel-out { from { opacity: 1; } to { opacity: 0; transform: scale(0.98); } }
+.pane.enter > *, .pane.enter .list > li { animation: dissolve-in 180ms ease-out both; animation-delay: calc(var(--i, 0) * 12ms); }
+@keyframes dissolve-in { from { opacity: 0; } to { opacity: 1; } }
+.item.leaving { animation: dissolve-out 160ms ease-in both; pointer-events: none; }
+@keyframes dissolve-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* ---------- header: who, and what it's doing right now ---------- */
 .head { display: flex; align-items: center; gap: 8px; padding: 6px var(--gut) 6px 4px; }
@@ -78,7 +49,7 @@ html, body { height: 100%; background: transparent; }
   margin: 4px 0 0; font: 700 var(--t-body)/1.4 var(--display); letter-spacing: 0.03em; color: var(--accent);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; visibility: hidden;
 }
-.saying.on { visibility: visible; animation: dissolve-in 200ms step-end both; }
+.saying.on { visibility: visible; animation: dissolve-in 200ms ease-out both; }
 .by.quiet { visibility: hidden; }
 .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .who h1 {
@@ -106,18 +77,18 @@ html, body { height: 100%; background: transparent; }
 .looktile[aria-checked="true"] { --bc: var(--accent); --fill: #0a2a28; color: var(--accent); }
 
 /* ---------- sidebar: one page per concern ---------- */
-.split { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--side) minmax(0, 1fr); border-top: 1px dashed var(--line); }
+.split { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--side) minmax(0, 1fr); border-top: 1px solid var(--line); }
 :root { --side: 148px; }
-.side { display: flex; flex-direction: column; gap: 4px; padding: 12px 10px var(--gut); border-inline-end: 1px dashed var(--line); overflow-y: auto; }
+.side { display: flex; flex-direction: column; gap: 4px; padding: 12px 10px var(--gut); border-inline-end: 1px solid var(--line); overflow-y: auto; }
 .nav { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .side-label { margin: 14px 8px 4px; font: 700 var(--t-small)/1.3 var(--mono); font-stretch: 87.5%; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
 /* A page link: quiet text until it's hovered or current; the current one sits in the accent LED frame. */
 .navi {
   appearance: none; border: 0; cursor: pointer; width: 100%;
-  display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 7px 8px; text-align: start;
+  display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 9px 10px; text-align: start;
   font: 500 var(--t-body)/1.25 var(--mono); color: var(--ink-2); white-space: nowrap;
   --bc: transparent; --fill: transparent;
-  transition: color 120ms steps(2, end);
+  transition: color 120ms ease-out;
 }
 .navi:hover { color: var(--ink); --fill: rgba(120, 255, 226, 0.05); }
 .navi[aria-current="page"] { color: var(--accent); font-weight: 700; --fill: #0a2a28; --bc: var(--accent); }
@@ -141,7 +112,7 @@ html, body { height: 100%; background: transparent; }
 /* The page's footer: what's about the whole list on the left, the page arrows on the right. */
 .pfoot {
   flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  min-height: 44px; margin-top: calc(var(--step) - var(--group)); border-top: 1px dashed var(--line);
+  min-height: 44px; margin-top: calc(var(--step) - var(--group)); border-top: 1px solid var(--line);
 }
 .pfoot-l { min-width: 0; display: flex; align-items: center; }
 .pager { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; }
@@ -179,7 +150,7 @@ html, body { height: 100%; background: transparent; }
 .list { margin: 0; padding: 0; list-style: none; display: grid; }
 .item {
   display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 8px;
-  min-height: 32px; padding: 6px 0; border-bottom: 1px dashed var(--line);
+  min-height: 32px; padding: 6px 0; border-bottom: 1px solid var(--line);
 }
 .item:last-child { border-bottom: 0; }
 .item .text { min-width: 0; font-size: var(--t-body); line-height: 1.35; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -211,7 +182,7 @@ html, body { height: 100%; background: transparent; }
 @keyframes arm-blink { 50% { background: #ff8a78; } }
 
 /* ---------- settings ---------- */
-.setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 32px; }
+.setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 38px; }
 .setting > span { min-width: 0; font-size: var(--t-body); line-height: 1.35; color: var(--ink); }
 .setting > span small { display: block; font-size: var(--t-small); line-height: 1.35; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .setting .link { white-space: nowrap; }
@@ -226,7 +197,7 @@ html, body { height: 100%; background: transparent; }
 .body select {
   appearance: none; min-width: 0; flex: 1; border: 0; color: var(--ink); padding-inline-end: 30px;
   font-family: var(--mono); font-weight: 500; font-stretch: 87.5%; cursor: pointer;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h2v2H0zM2 2h2v2H2zM4 4h2v2H4zM6 2h2v2H6zM8 0h2v2H8z' fill='%23b4d8d1'/%3E%3C/svg%3E") no-repeat right 12px center;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23b4d8d1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center;
 }
 .body select option { background: var(--panel); color: var(--ink); }
 .body select:focus-visible { outline: none; }
@@ -251,13 +222,13 @@ html, body { height: 100%; background: transparent; }
   font-size: var(--t-small); line-height: 1.45; color: var(--ink);
 }
 .tip[hidden] { display: none; }
-.tip.in { animation: dissolve-in 140ms step-end both; }
+.tip.in { animation: dissolve-in 140ms ease-out both; }
 @media (prefers-reduced-motion: reduce) { .tip.in { animation: none; } }
 
 /* ---------- note: what just happened after something you did here ---------- */
 .note {
-  margin: 0; padding: 9px var(--gut); border-top: 1px dashed var(--line);
-  font-size: var(--t-body); animation: dissolve-in 160ms step-end both; line-height: 1.4; color: var(--accent); background: var(--panel);
+  margin: 0; padding: 9px var(--gut); border-top: 1px solid var(--line);
+  font-size: var(--t-body); animation: dissolve-in 160ms ease-out both; line-height: 1.4; color: var(--accent); background: var(--panel);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* With Copy details: the line shortens first, the link stays whole at the end of the row. */

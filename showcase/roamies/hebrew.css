@@ -39,3 +39,13 @@ html[dir="rtl"] .caps, html[dir="rtl"] .chords, html[dir="rtl"] .cmd {
 canvas { direction: ltr; }
 html[dir="rtl"] .rp-body pre { direction: ltr; text-align: left; }
 html[dir="rtl"] .rp-body code { display: inline-block; }
+
+/* Soft surfaces shared by setup and settings. Drawing coordinates stay unchanged. */
+.px { --bw: 1px; --radius: 12px; clip-path: none; border-radius: var(--radius); }
+.px::before { clip-path: none; border-radius: calc(var(--radius) - var(--bw)); }
+.px:focus-visible, .px:has(:focus-visible) { --bw: 2px; outline: 2px solid var(--accent); outline-offset: 3px; }
+.switch { --radius: 24px; }
+.switch::after { border-radius: 50%; transition: transform .18s ease-out, background-color .18s ease-out; }
+.navi .dot, .mark { border-radius: 50%; }
+html[dir="rtl"] .body select { background-position: left 12px center; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }

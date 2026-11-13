@@ -883,7 +883,9 @@
           const sx = cx0 * K, sy = cy0 * K, sw = (cx1 - cx0) * K, sh = (cy1 - cy0) * K;
           const X = cx0 * P, Y = cy0 * P, DW = (cx1 - cx0) * P, DH = (cy1 - cy0) * P;
           octx.putImageData(img, 0, 0, sx, sy, sw, sh);
-          ctx.imageSmoothingEnabled = false;
+          // Interpolate the LED layer on Retina displays instead of enlarging hard square edges.
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           // Following the cursor: the whole LED layer (and the text drawn over it) slides by the part of a cell
           // the body is past its grid cell, so it glides with the cursor instead of hopping a cell at a time.
           const glide = !!m.drive && (pres.state === 'shown' || pres.state === 'in');
