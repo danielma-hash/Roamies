@@ -7,6 +7,9 @@ import type { TaskCard } from './task-cards.service.js';
 import type { AttentionSnapshot } from './attention.types.js';
 import { renderVoiceWorkspace } from './browser-voice-workspace.js';
 import type { VoiceWorkspaceState, VoiceWorkspaceAction } from './browser-voice-workspace.js';
+import { renderRecipesWorkspace } from './browser-recipes-workspace.js';
+import type { RecipesWorkspaceAction } from './project-recipes.types.js';
+import type { ProjectRecipe } from './project-recipes.types.js';
 
 export interface WorkspaceState {
   readonly sessions: readonly ClaudeSession[];
@@ -21,11 +24,13 @@ export interface WorkspaceState {
   readonly cards?: readonly TaskCard[];
   readonly attention?: AttentionSnapshot;
   readonly voiceWorkspace?:VoiceWorkspaceState;
+  readonly recipes?:readonly ProjectRecipe[];
 }
 
 export type WorkspaceAction =
   | OperationsWorkspaceAction
   | VoiceWorkspaceAction
+  | RecipesWorkspaceAction
   | { readonly type: 'workspace'; readonly action: 'memory.search'; readonly query: string; readonly scope: 'company'|'personal' }
   | { readonly type: 'workspace'; readonly action: 'sessions.list'; readonly query: string }
   | { readonly type: 'workspace'; readonly action: 'sessions.observe' }
@@ -152,6 +157,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
   root.append(renderKnowledgeWorkspace(state, (message) => send(message as WorkspaceAction)));
   root.append(renderOperationsWorkspace({ ...state, cards:state.cards??[] }, send));
   root.append(renderVoiceWorkspace({ ...state.voiceWorkspace, entries:state.voiceWorkspace?.entries??[], busy:state.busy },send));
+  root.append(renderRecipesWorkspace({recipes:state.recipes??[],busy:state.busy},send));
   return root;
 }
 
