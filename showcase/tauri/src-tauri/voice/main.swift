@@ -76,7 +76,8 @@ let dryRun = ProcessInfo.processInfo.environment["ROAMIES_VOICE_DRYRUN"] == "1"
 enum LiveTest {
     static let url: URL? = {
         let a = CommandLine.arguments
-        guard let i = a.firstIndex(of: "--test-live"), i + 1 < a.count else { return nil }
+        // The Rust debug launcher uses the cross-platform --test-audio spelling.
+        guard let i = a.firstIndex(where: { $0 == "--test-live" || $0 == "--test-audio" }), i + 1 < a.count else { return nil }
         return URL(fileURLWithPath: a[i + 1])
     }()
     static var sink: ((AVAudioPCMBuffer) -> Void)?
@@ -117,6 +118,7 @@ struct RecognizerCallbacks {
     let onText: (String) -> Void
     let onDone: () -> Void
     let onError: (Error) -> Void
+    var onTimedText: ((String, Double?) -> Void)? = nil
 }
 
 // macOS 26+: SpeechAnalyzer + SpeechTranscriber. Model assets are shared system-wide and
@@ -253,7 +255,16 @@ final class LegacyRecognizer: Recognizer {
         task = rec.recognitionTask(with: req) { result, error in
             DispatchQueue.main.async {
                 if let result {
-                    cb.onText(result.bestTranscription.formattedString)
+                    let transcription = result.bestTranscription
+                    let text = transcription.formattedString
+                    if let timed = cb.onTimedText {
+                        // Segment times are relative to the audio sent to this recognition task.
+                        let boundary = WakeWord.match(text).flatMap { rest in
+                            let offset = text.utf16.count - rest.utf16.count
+                            return transcription.segments.last(where: { NSMaxRange($0.substringRange) <= offset }).map { $0.timestamp + $0.duration }
+                        }
+                        timed(text, boundary)
+                    } else { cb.onText(text) }
                     if result.isFinal { cb.onDone() }
                 }
                 if let error { cb.onError(error) }
@@ -326,31 +337,41 @@ enum OutputMute {
 final class Feed {
     private let lock = NSLock()
     private var target: Recognizer?
-    private var remember = false, recent: [AVAudioPCMBuffer] = []
-    private var seconds = 0.0
+    private var remember = false
+    private var recent: [(buffer: AVAudioPCMBuffer, start: Double)] = []
+    private var seconds = 0.0, elapsed = 0.0
     func set(_ r: Recognizer?, remember: Bool = false) {
         lock.lock(); defer { lock.unlock() }
-        target = r; self.remember = remember; recent = []; seconds = 0
+        target = r; self.remember = remember; recent = []; seconds = 0; elapsed = 0
     }
     // No cloud recognizer exists until wake detection. Replay only this bounded, in-memory tail so the
     // command spoken immediately after the phrase survives the local-to-Soniox handoff.
-    func handoff(_ r: Recognizer) {
+    func handoff(_ r: Recognizer, after boundary: Double = 0) {
         lock.lock(); defer { lock.unlock() }
-        for buffer in recent { r.append(buffer) }
+        for (buffer, start) in recent {
+            let skip = min(Double(buffer.frameLength), max(0, (boundary - start) * buffer.format.sampleRate).rounded(.up))
+            if let tail = Self.copy(buffer, skipping: AVAudioFrameCount(skip)) { r.append(tail) }
+        }
         target = r; remember = false; recent = []; seconds = 0
+    }
+    private static func copy(_ buffer: AVAudioPCMBuffer, skipping skip: AVAudioFrameCount = 0) -> AVAudioPCMBuffer? {
+        guard skip < buffer.frameLength, let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength - skip) else { return nil }
+        copy.frameLength = buffer.frameLength - skip
+        let from = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        let to = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+        for i in 0 ..< from.count {
+            let bytesPerFrame = Int(from[i].mDataByteSize) / Int(buffer.frameLength)
+            if let src = from[i].mData, let dst = to[i].mData { memcpy(dst, src.advanced(by: Int(skip) * bytesPerFrame), Int(copy.frameLength) * bytesPerFrame) }
+        }
+        return copy
     }
     func append(_ buffer: AVAudioPCMBuffer) {
         lock.lock(); defer { lock.unlock() }
-        if remember, let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
-            copy.frameLength = buffer.frameLength
-            let from = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
-            let to = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-            for i in 0 ..< from.count {
-                if let src = from[i].mData, let dst = to[i].mData { memcpy(dst, src, Int(from[i].mDataByteSize)) }
-            }
-            recent.append(copy); seconds += Double(copy.frameLength) / copy.format.sampleRate
+        if remember, let copy = Self.copy(buffer) {
+            let duration = Double(copy.frameLength) / copy.format.sampleRate
+            recent.append((copy, elapsed)); seconds += duration; elapsed += duration
             while seconds > 4, !recent.isEmpty {
-                let old = recent.removeFirst(); seconds -= Double(old.frameLength) / old.format.sampleRate
+                let old = recent.removeFirst().buffer; seconds -= Double(old.frameLength) / old.format.sampleRate
             }
         }
         target?.append(buffer)
@@ -870,11 +891,13 @@ final class Voice {
         wakeMiss = nil; wakeLoud = 0
     }
 
-    private func heardWhileWaiting(_ text: String) {
+    private func heardWhileWaiting(_ text: String, after boundary: Double? = nil) {
         guard text != wakeText else { return }
         let now = uptime()
-        wakeText = text; heardAt = now
         let (rest, d, miss) = WakeWord.scan(text)
+        // Wait for a timed local match before forwarding audio; still track non-wake speech for recycling.
+        if rest != nil && useSoniox && boundary == nil { return }
+        wakeText = text; heardAt = now
         guard let rest else { if let miss { wakeMiss = miss }; return }
         wakeLog("heard the phrase (distance \(d ?? 0))")
         wakeMiss = nil
@@ -888,7 +911,7 @@ final class Voice {
             guard let r = makeRecognizer() else { cancel(); return }
             rec = r
             best = ""
-            feed.handoff(r)
+            feed.handoff(r, after: boundary ?? 0)
             previous?.cancel()
         }
         showListening("wake", now)
@@ -928,7 +951,7 @@ final class Voice {
 
     private func makeRecognizer() -> Recognizer? {
         var mine: Recognizer?
-        let cb = RecognizerCallbacks(
+        var cb = RecognizerCallbacks(
             onText: { [weak self] text in guard let self, self.rec === mine else { return }; self.onText(text) },
             onDone: { [weak self] in
                 guard let self, self.rec === mine else { return }
@@ -936,6 +959,11 @@ final class Voice {
             },
             onError: { [weak self] err in guard let self, self.rec === mine else { return }; self.onError(err) }
         )
+        cb.onTimedText = { [weak self] text, boundary in
+            guard let self, self.rec === mine else { return }
+            if self.phase == .wake { self.heardWhileWaiting(text, after: boundary) }
+            else { self.onText(text) }
+        }
         if phase == .wake { mine = localWakeRecognizer(cb) }
         else if useSoniox { mine = SonioxRecognizer(cb) }
         else if #available(macOS 26, *), useAnalyzer { mine = AnalyzerRecognizer(cb) } else { mine = LegacyRecognizer(cb, onDeviceOnly: phase == .wake) }
@@ -1020,9 +1048,8 @@ final class Voice {
         // A take started by the wake phrase: the phrase itself isn't part of what was said.
         let text: String
         if woke && useSoniox {
-            // Replayed room speech and revised hypotheses without the phrase are never a request.
-            guard let request = WakeWord.match(raw) else { return }
-            text = request
+            // The local recognizer already authorized the take; Soniox receives only post-phrase audio.
+            text = raw
         } else { text = woke ? (WakeWord.match(raw) ?? raw) : raw }
         guard text != best else { return }
         best = text
@@ -1190,6 +1217,19 @@ if args.contains("--test-wake-feed") {
     check("stop clears retained audio", next.heard.isEmpty)
     feed.set(local); feed.append(buf); feed.handoff(next)
     check("ordinary explicit takes retain no wake replay", next.heard.isEmpty)
+    let timed = RecordingRecognizer()
+    feed.set(local, remember: true)
+    for n in 0 ..< 6 {
+        for k in 0 ..< 1000 { buf.floatChannelData![0][k] = Float(n * 1000 + k) }
+        feed.append(buf)
+    }
+    feed.handoff(timed, after: 4.5)
+    check("timestamp trims room speech and wake phrase, including a partial PCM buffer", timed.heard == [4500, 5000])
+    buf.floatChannelData![0][0] = 6000; feed.append(buf)
+    check("command audio after the handoff follows the retained command prefix", timed.heard == [4500, 5000, 6000])
+    let future = RecordingRecognizer()
+    feed.set(local, remember: true); feed.append(buf); feed.handoff(future, after: 2)
+    check("a boundary beyond buffered audio never replays ambient speech", future.heard.isEmpty)
     exit(bad == 0 ? 0 : 1)
 }
 // --test-snap checks which drawn paths count as a circled area; exits 1 on a failure.
