@@ -47,6 +47,10 @@ import { WorkspaceController } from './workspace-controller.ts';
 import { AsmMemoryService } from './asm-memory.service.ts';
 import { createAsmTool } from './asm-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
+import { query as claudeSessionQuery } from '@anthropic-ai/claude-agent-sdk';
+import { ClaudeRunService } from './claude-run.service.ts';
+import { activeClaudeSessionIds, localClaudeExecutable } from './claude-live-sessions.ts';
+import { createClaudeControlTools } from './claude-control-tools.ts';
 import { TaskCardsService } from './task-cards.service.ts';
 import { AttentionService } from './attention.service.ts';
 import { PronunciationDictionaryService } from './pronunciation-dictionary.service.ts';
@@ -1304,6 +1308,28 @@ function menu() {
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
+let claudeApprovalQueue = Promise.resolve();
+const confirmClaudeControl = (text, signal) => {
+  const next = claudeApprovalQueue.then(async () => {
+    if (signal?.aborted) return false;
+    const answer = await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal);
+    return isYes(answer) || /^(כן|אשר|מאשר|מאשרת|אפשר|בצע)[.!\s]*$/u.test(String(answer).trim());
+  });
+  claudeApprovalQueue = next.catch(() => false);
+  return next;
+};
+const claudeRuns = new ClaudeRunService({ executable: localClaudeExecutable, env: () => ({ ...process.env, CLAUDECODE: undefined }),
+  query: claudeSessionQuery, activeSessionIds: () => activeClaudeSessionIds(localClaudeExecutable()),
+  allowActions: () => config.allowActions && !recipeReadOnly, confirm: confirmClaudeControl });
+const claudeControlTools = createClaudeControlTools({ runs: claudeRuns, sessions: claudeSessions,
+  allowActions: () => config.allowActions, readOnly: () => recipeReadOnly, confirm: confirmClaudeControl });
+tools.push(...claudeControlTools);
+let lastClaudeRuns = '';
+setInterval(() => {
+  if (!panelOpen) return;
+  const next = JSON.stringify(claudeRuns.list());
+  if (next !== lastClaudeRuns) { lastClaudeRuns = next; panel(); }
+}, 1500).unref();
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
@@ -1333,7 +1359,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
-    workspace: {...workspace.snapshot(),health:evidenceHealth.snapshot(),currentConversationId:session?.id},
+    workspace: {...workspace.snapshot(),managedSessions:claudeRuns.list(),health:evidenceHealth.snapshot(),currentConversationId:session?.id},
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,
@@ -1799,7 +1825,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
   else if (m.type === 'workspace') {
-    if(m.action==='sessions.fork'&&(!config.allowActions||busy))panelNote('ליצירת עותק יש להפעיל פעולות בהגדרות ולסיים את הפעולה הנוכחית.',true);
+    if (typeof m.action === 'string' && m.action.startsWith('claude_control_')) {
+      const tool = claudeControlTools.find((candidate) => candidate.name === m.action);
+      if (tool) tool.execute(m).then(() => panel()).catch((error) => panelNote(error.message || 'ניהול השיחה נכשל.', true));
+    }
+    else if(m.action==='sessions.fork'&&(!config.allowActions||busy))panelNote('ליצירת עותק יש להפעיל פעולות בהגדרות ולסיים את הפעולה הנוכחית.',true);
     else workspace.handle(m).catch(() => panelNote('הפעולה לא הושלמה.', true));
   }
   else if (m.type === 'panel_open') { sonioxKeyLoaded.then(() => { if (panelOpen) panel(); }); panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
@@ -1861,6 +1891,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   // The app quit (or is restarting for an update): save a reply still running, let the last saves land, never hang.
   if (busy) syncSession();
   closeSpare();
+  claudeRuns.close();
   Promise.race([flushWrites(), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });
 

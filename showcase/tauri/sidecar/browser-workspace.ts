@@ -1,3 +1,6 @@
+import { renderClaudeControl, renderClaudeInstruction } from './browser-claude-control.js';
+import type { ClaudeControlAction } from './browser-claude-control.js';
+import type { ClaudeRunSnapshot } from './claude-run.types.js';
 import type { ClaudeSession, ClaudeTranscript } from './claude-sessions.types.js';
 import { renderKnowledgeWorkspace } from './browser-knowledge-workspace.js';
 import type { AsmMemoryCitation } from './asm-memory.types.js';
@@ -16,6 +19,7 @@ import { renderConversationsWorkspace } from './browser-conversations-workspace.
 import type { ConversationsWorkspaceState, ConversationsWorkspaceAction } from './browser-conversations-workspace.js';
 
 export interface WorkspaceState {
+  readonly managedSessions?: readonly ClaudeRunSnapshot[];
   readonly sessions: readonly ClaudeSession[];
   readonly available: boolean;
   readonly message?: string;
@@ -35,6 +39,7 @@ export interface WorkspaceState {
 }
 
 export type WorkspaceAction =
+  | ClaudeControlAction
   | OperationsWorkspaceAction
   | VoiceWorkspaceAction
   | RecipesWorkspaceAction
@@ -84,6 +89,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
   root.append(element('h2', 'workspace-title', 'שיחות Claude'),
     element('p', 'workspace-description', 'שיחות מקומיות, הודעות אחרונות והכנת המשך עבודה.'));
 
+  root.append(renderClaudeControl(state.managedSessions ?? [], send));
   const form = element('form', 'workspace-search');
   const searchLabel = element('label', 'workspace-search-label', 'חיפוש שיחה או פרויקט');
   const search = element('input', 'workspace-search-input');
@@ -143,6 +149,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
     const detail = element('section', 'workspace-detail'); detail.setAttribute('aria-label', 'הודעות מהשיחה שנבחרה');
     const title = element('h3', 'workspace-detail-title', session.title); title.dir = 'auto'; title.dataset.userContent = '';
     detail.append(title);
+    if (!(state.managedSessions ?? []).some((run) => run.id === session.id)) detail.append(renderClaudeInstruction(session.id, session.title, 'claude_control_resume', send));
     const actions = element('div', 'workspace-actions');
     actions.append(button('הכנת הקשר להמשך', () => send({ type: 'workspace', action: 'sessions.handoff', id: session.id }), Boolean(state.busy)));
     const forkControls = element('div', 'workspace-fork-controls');

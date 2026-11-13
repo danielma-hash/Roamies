@@ -540,7 +540,7 @@
     if (!state) return;
     const active = document.activeElement;
     // Never rebuild under someone typing a key: catch up when they leave the field.
-    if (!focusKey && !animate && active?.tagName === 'INPUT' && active.closest('.pane')) { deferred = true; return; }
+    if (!focusKey && !animate && (active?.tagName === 'INPUT' || active?.matches('textarea.workspace-control')) && active.closest('.pane')) { deferred = true; return; }
     deferred = false;
     const keep = focusKey ?? active?.dataset?.k ?? (active?.id?.startsWith('key-') ? active.id : null);
     hideTip();
@@ -562,7 +562,7 @@
     }
     if (keep) (document.querySelector(`.pane [data-k="${CSS.escape(keep)}"]`) ?? document.getElementById(keep))?.focus();
   }
-  document.addEventListener('focusout', (e) => { if (deferred && e.target.tagName === 'INPUT') setTimeout(() => deferred && render(), 0); });
+  document.addEventListener('focusout', (e) => { if (deferred && (e.target.tagName === 'INPUT' || e.target.matches?.('textarea.workspace-control'))) setTimeout(() => deferred && render(), 0); });
   // The window changes size with the screen it opens on: as many rows as fit there.
   let resizeTimer = 0;
   addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => state && render(), 120); });

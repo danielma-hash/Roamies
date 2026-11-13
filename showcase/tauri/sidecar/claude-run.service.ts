@@ -78,7 +78,7 @@ export class ClaudeRunService {
       const abort = new AbortController();
       let run: Run | undefined;
       const query = this.options.query({ prompt: input, options: {
-        cwd, ...(resume ? { resume } : { sessionId: id }), pathToClaudeCodeExecutable: this.options.executable(),
+        cwd, ...(resume ? { resume } : { sessionId: id, title: redactClaudeText(title).slice(0, 160) }), pathToClaudeCodeExecutable: this.options.executable(),
         env: this.options.env?.(), settingSources: [], strictMcpConfig: true, mcpServers: {},
         tools: TOOLS, permissionMode: 'default', persistSession: true, verbatimPrompts: true,
         systemPrompt: { type: 'preset', preset: 'claude_code', append: 'Respond in Hebrew. Follow project instructions. Never merge, deploy, publish or message others without explicit user instruction. This session is controlled by JARVIS; report what was actually verified.' },

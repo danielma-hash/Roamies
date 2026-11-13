@@ -90,6 +90,7 @@ export function redactArgs(name, args = {}) {
   // Steps that aren't a list (a model sent them as one string) are logged as their size only: they can hold typed
   // text too, and reading them as a list crashed the request before the tool could say what was wrong.
   if (name === 'act_in_app') return { ...args, steps: Array.isArray(args.steps) ? args.steps.map((s) => (['type', 'set', 'fill'].includes(s?.do) ? { ...s, text: len(s.text) } : s)) : args.steps == null ? [] : `[${typeof args.steps}, ${len(typeof args.steps === 'string' ? args.steps : JSON.stringify(args.steps)).slice(1)}` };
+  if (name.startsWith('claude_control_') && args.instruction !== undefined) return { ...args, instruction: len(args.instruction) };
   if (name === 'write_file') return { path: args.path, content: len(args.content) };
   return args;
 }
