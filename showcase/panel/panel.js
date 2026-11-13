@@ -514,34 +514,6 @@
         BIND_ROWS.filter(([k]) => b[k]).map(([k, label]) => el('div', { className: 'setting' },
           el('span', {}, label, ui.bindShown.has(k) ? el('small', { className: 'cmd', textContent: b[k] }) : null),
           link('Copy', () => send({ type: 'copy_bind', which: k }), { k: `bind-${k}`, aria: `Copy the command for ${label.toLowerCase()}` })))) : null,
-    ];
-  }
-  // Who made Roamies: Ken, live (he's drawn like the looks but isn't one), and where to find him.
-  const KEN = [
-    ['Skool', 'Learn with Ken, or support him', 'https://www.skool.com/kenkai', "Open Ken Kai's Skool community"],
-    ['YouTube', '@kenkaidoesai', 'https://www.youtube.com/@kenkaidoesai', "Open Ken Kai's YouTube channel"],
-    ['TikTok', '@ggkenkai', 'https://www.tiktok.com/@ggkenkai', "Open Ken Kai's TikTok"],
-    ['Source code', 'Open source under AGPL-3.0', 'https://github.com/KenKaiii/Roamies', 'Open the Roamies source code on GitHub'],
-  ];
-  let ken = null;
-  function maker() {
-    if (!ken) {
-      const cv = el('canvas', { 'aria-hidden': 'true' });
-      const r = liveRoamie(cv, 100, 74, { look: 'ken', y: 0.55 });
-      const card = el('div', { className: 'maker' }, cv, el('span', {}, 'Ken Kai', el('small', { textContent: 'Creator of Roamies' })));
-      let waved = 0;
-      card.addEventListener('pointerenter', () => { if (r && Date.now() - waved > 3500) { waved = Date.now(); r.act('wave'); } });
-      r?.appear('crt');
-      ken = card;
-    }
-    return ken;
-  }
-  function aboutPage() {
-    return [
-      group('Made by', null, null, maker(),
-        KEN.map(([label, hint, url, aria]) => el('div', { className: 'setting' },
-          el('span', {}, label, el('small', { textContent: hint })),
-          link('Open', () => send({ type: 'open_link', url }), { k: `ken-${label.toLowerCase()}`, aria })))),
       group('Help', null, null,
         el('div', { className: 'links' },
           link('Setup guide', () => act('setup', true), { k: 'setup' }),
@@ -553,7 +525,7 @@
   }
 
   // ---------------------------------------------------------------- render
-  const PANES = { home, memory, model: modelPage, appearance: appearancePage, voice: voicePage, behavior: behaviorPage, about: aboutPage };
+  const PANES = { home, memory, model: modelPage, appearance: appearancePage, voice: voicePage, behavior: behaviorPage };
   // focusKey: what to focus after (a data-k, or an element id); otherwise whatever had focus keeps it.
   function render(focusKey, animate = false) {
     if (!state) return;
@@ -601,7 +573,7 @@
   const TABS = Object.keys(PANES);
   const navi = (t) => $(`nav-${t}`);
   function show(name, focus = false) {
-    if (!PANES[name]) name = name === 'settings' ? 'model' : 'home';
+    if (!PANES[name]) name = name === 'about' ? 'behavior' : name === 'settings' ? 'model' : 'home';
     const changed = name !== tab;
     if (!changed && !focus) return;
     tab = name;
@@ -748,7 +720,7 @@
       s.commitments = Array.from({ length: 14 }, (_, i) => ({ id: `c${i}`, text: `Follow up on item ${i + 1}`, when: 'Fri 7 Nov, 10:00', overdue: i < 2 }));
       s.recent = Array.from({ length: 30 }, (_, i) => ({ ...s.recent[i % s.recent.length], at: at - i * 70e3 }));
     }
-    // ?problem: an error was shown earlier (About gets Copy last error). ?note=bad: a failed save, with Copy details.
+    // ?problem: an error was shown earlier (Behavior gets Copy last error). ?note=bad: a failed save, with Copy details.
     // ?update=failed: the last check for updates failed (the button's tooltip says why).
     if (q.has('problem') || q.get('note') === 'bad') s.problem = { code: 'E30', at };
     if (q.get('note') === 'bad') setTimeout(() => window.__panel({ kind: 'note', text: "That key didn't save (E30). Try again.", bad: true, copy: true }), 400);
