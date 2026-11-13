@@ -21,7 +21,9 @@ key) receives:
   and the facts and commitments Roamies has saved in memory
 - screenshots or window text, when Roamies looks at your screen to answer
 
-**Fish Audio** receives the text of each reply to speak it, only if spoken replies are on. It uses your own key.
+**Cartesia** receives the text of each reply to speak it in Hebrew, only if spoken replies are on. It uses your own key.
+
+**Soniox** receives microphone audio while you explicitly start a voice session on macOS, to transcribe it.
 
 **GitHub** is used to check for and download updates.
 
@@ -36,15 +38,11 @@ Each provider's own privacy policy applies to what is sent to it.
 
 ## Speech, microphone and screen
 
-- **macOS:** speech is turned into text on your Mac by Apple's on-device recognizer. On Macs where on-device
-  recognition isn't available, Apple's recognizer may use Apple's servers, under Apple's terms.
+- **macOS, this custom build:** microphone audio is streamed to Soniox, using your Soniox key, and the returned transcript goes to your chosen AI provider.
 - **Windows and Linux:** speech is turned into text on your computer (Parakeet).
 - The microphone is used only while you hold the talk keys (or, on Linux with Wayland, from your talk shortcut
   until you press it again or pause).
-- **Wake word (macOS, off by default):** when you turn it on, the microphone stays open so Roamies can hear
-  "Hey Roamies", and macOS shows its microphone dot the whole time. That audio is turned into text only on your Mac
-  (it never starts on a Mac that would need Apple's servers). Nothing is kept or sent anywhere until you say the phrase;
-  the log notes only when it heard speech and how close that came to the phrase, never what was said.
+- **Wake word:** disabled in this custom macOS build. It does not continuously stream room audio to Soniox.
 - The screen is captured only when Roamies answers something about your screen, or when you mark an area. On Linux
   with Wayland it's taken through your desktop's screenshot portal; the copy the portal saves is deleted right away.
 
@@ -67,7 +65,7 @@ permission states, and your settings. Keys, tokens, email addresses, names, your
 first. Nothing is uploaded: it stays on your computer unless you choose to send it (for example by attaching it to a
 GitHub issue).
 
-Your Fish Audio key is kept in the macOS Keychain, encrypted with DPAPI on Windows, or in your desktop's keyring
+Your Cartesia key and, on macOS, your Soniox key are kept in the macOS Keychain, encrypted with DPAPI on Windows, or in your desktop's keyring
 (through the Secret Service) on Linux.
 
 You can see what Roamies remembers on the panel's **Memory** page, and remove it with **Forget** or

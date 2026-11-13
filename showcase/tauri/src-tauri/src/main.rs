@@ -879,7 +879,7 @@ fn open_onboarding(app: &AppHandle, mode: Option<&str>) {
     }
     let url = if chat { "onboarding/index.html?mode=chat" } else { "onboarding/index.html" };
     let mut b = WebviewWindowBuilder::new(app, ONBOARDING_LABEL, WebviewUrl::App(url.into()))
-        .title(if chat { "Get to know you" } else { "Welcome to Roamies" })
+        .title(if chat { "נעים להכיר" } else { "ברוכים הבאים ל־Roamies" })
         .inner_size(780.0, 540.0)
         .resizable(false)
         .maximizable(false)

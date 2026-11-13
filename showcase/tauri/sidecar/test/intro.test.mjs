@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { QUESTIONS, opener, openNote, answerNote, answerTurn, wantsSkip, endsChat, questionIn, splitTurn, plain, stripNote } from '../intro.mjs';
 
 assert.equal(QUESTIONS, 4);
-assert.match(opener('Ken'), /^Hi Ken, I'm Roamie!.*four quick questions\. What are you working on these days\?$/);
-assert.match(opener('Ken', 'Sarah'), /^Hi Ken, I'm Sarah! /, "each look says its own name");
+assert.match(opener('Ken'), /^שלום Ken, אני רוֹמי!.*ארבע שאלות קצרות להיכרות\. על מה אתה עובד בימים אלה\?$/);
+assert.match(opener('Ken', 'Sarah'), /^שלום Ken, אני Sarah! /, "each look says its own name");
 assert.ok(!/[—–]| - /.test(opener('Ken')), 'no dashes in the opener');
-assert.match(openNote('Ken'), /word for word.*"\[wave\] Hi Ken/s);
+assert.match(openNote('Ken'), /word for word.*"\[wave\] שלום Ken/s);
 
 // Answers 1 and 2 get a follow-up question, 3 gets the fixed AI question, 4 wraps up (a memory pass saves the facts).
 assert.match(answerNote(1, 'Ken'), /answer 1 of 4.*ONE easy question.*2 free questions left/s);
@@ -31,8 +31,8 @@ assert.match(answerNote(3, 'Ken'), /want to stop, one short line with no questio
 
 assert.equal(questionIn('[wave] Hi Ken! I make things. What are you working on these days?'), 'What are you working on these days?');
 assert.equal(questionIn('Videos, nice. What kind of videos do you make? Could be tutorials, vlogs, or something else entirely.'), 'What kind of videos do you make?');
-assert.equal(questionIn('No question here.'), 'Type your answer…');
-assert.equal(questionIn(`${'a'.repeat(120)}?`), 'Type your answer…', 'too long for the box');
+assert.equal(questionIn('No question here.'), 'התשובה שלך…');
+assert.equal(questionIn(`${'a'.repeat(120)}?`), 'התשובה שלך…', 'too long for the box');
 assert.equal(questionIn('VS Code, nice. 😄 What\'s the actual thing you\'re going for right now? Could be X.'), "What's the actual thing you're going for right now?", 'no emoji in front');
 assert.equal(questionIn("100k by summer, love it! Okay, last one: have you used AI helpers before, like ChatGPT, Claude, Gemini, an AI that does things on your computer, or none yet?"), 'Have you used AI helpers before?', 'long question cut to its core');
 // The guide window shows the reaction, the question as the heading, and the nudge after it.
@@ -57,7 +57,7 @@ console.log('intro tests: passed');
   assert.equal(withGoal.at(-1).marks[0].kind, 'medal');
   assert.ok(!without.some((b) => b.marks.some((m) => m.kind === 'medal')), 'no goal, no medal');
   assert.ok(withGoal.slice(0, 3).every((b) => b.marks[0].kind === 'ticket' && b.marks[0].action?.do === 'ask'), 'each ticket has a button that asks');
-  assert.match(without[0].marks[0].action.value, /wallpaper/, 'no words-on-screen how-to off the Mac');
+  assert.match(without[0].marks[0].action.value, /תמונת הרקע/, 'no words-on-screen how-to off the Mac');
   console.log('tour tests: passed');
 }
 // The capability showcase: fixed beats that pass the draw tool's checks, one card per listed capability, in order.

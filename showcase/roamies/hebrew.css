@@ -1,0 +1,41 @@
+html[dir="rtl"] {
+  --mono: Arial, "Noto Sans Hebrew", system-ui, sans-serif;
+  --display: Arial, "Noto Sans Hebrew", system-ui, sans-serif;
+  font-family: var(--mono);
+  text-align: start;
+}
+html[dir="rtl"] body, html[dir="rtl"] button, html[dir="rtl"] input, html[dir="rtl"] select {
+  font-family: var(--mono);
+  letter-spacing: normal;
+  font-stretch: normal;
+}
+html[dir="rtl"] h1, html[dir="rtl"] h2, html[dir="rtl"] .side-label, html[dir="rtl"] .sub,
+html[dir="rtl"] .waiting, html[dir="rtl"] .count, html[dir="rtl"] .looktile .name {
+  letter-spacing: normal;
+  font-stretch: normal;
+  text-transform: none;
+}
+html[dir="rtl"] .pane { overflow-y: auto; overflow-x: hidden; }
+html[dir="rtl"] .ghead p, html[dir="rtl"] .setting > span small, html[dir="rtl"] .why {
+  white-space: normal;
+  line-height: 1.55;
+}
+html[dir="rtl"] .panel { padding-inline: 30px 10px; }
+html[dir="rtl"] .rp, html[dir="rtl"] .rp-body, html[dir="rtl"] .ab, html[dir="rtl"] .ab-text {
+  direction: rtl;
+  text-align: start;
+  font-family: var(--mono);
+  letter-spacing: normal;
+}
+html[dir="rtl"] code, html[dir="rtl"] pre, html[dir="rtl"] kbd,
+html[dir="rtl"] input[type="password"], html[dir="rtl"] input[type="email"], html[dir="rtl"] input[type="url"],
+html[dir="rtl"] .caps, html[dir="rtl"] .chords, html[dir="rtl"] .cmd {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: Menlo, ui-monospace, monospace;
+  text-align: start;
+}
+/* Drawing coordinates are physical screen positions; only the text is bidirectional. */
+canvas { direction: ltr; }
+html[dir="rtl"] .rp-body pre { direction: ltr; text-align: left; }
+html[dir="rtl"] .rp-body code { display: inline-block; }

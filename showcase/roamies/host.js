@@ -103,7 +103,7 @@
       // What it's saying stays up while you type: only what's sent interrupts it.
       ask = { id: m.id, bar: true, h: { close: () => bar.close(), focus() {} }, choices: null, sel: -1, label: null };
       bar.open({
-        placeholder: m.prompt || m.placeholder || '', label: field.getAttribute('aria-label'), cursor,
+        placeholder: he(m.prompt || m.placeholder || ''), label: field.getAttribute('aria-label'), cursor,
         onKey: (e) => askKey(e, bar.value, true), onPress: focusField, onLeft: () => finishAsk(null),
       });
       focusField();
@@ -113,9 +113,9 @@
     field.value = '';
     field.type = m.mask ? 'password' : 'text';
     // The question goes in the placeholder, so the bubble reads "Paste your API key…" until you type.
-    const question = m.prompt || m.placeholder || '';
+    const question = he(m.prompt || m.placeholder || '');
     // A yes/no: Allow answers yes, any other button no. The field only takes keys then (Y, N, Tab, arrows, Enter).
-    const choices = Array.isArray(m.choices) && m.choices.length ? m.choices.map(String) : null;
+    const choices = Array.isArray(m.choices) && m.choices.length ? m.choices.map((choice) => he(String(choice))) : null;
     const h = a.prompt({ placeholder: question, mask: m.mask, onPress: focusField, choices, onChoose: (i) => finishAsk(i === 0 ? 'yes' : null) });
     ask = { id: m.id, h, choices, sel: -1, label: null };
     if (choices) { ask.label = field.getAttribute('aria-label'); field.setAttribute('aria-label', `${question} Press Y to allow or N to decline.`); }
@@ -207,7 +207,7 @@
       const job = jobs.shift(), a = getAgent();
       if (!a) break;
       current = job;
-      job.h = a.tool(job.anim.tool, { variant: job.anim.variant, label: job.anim.label, detail: job.anim.detail, live: true, rect: job.target, rectName: job.targetName });
+      job.h = a.tool(job.anim.tool, { variant: job.anim.variant, label: he(job.anim.label), detail: he(job.anim.detail), live: true, rect: job.target, rectName: job.targetName });
       if (job.image) job.h.state.image = job.image;
       if (job.result !== undefined) job.h.done(!job.result);
       await job.h.closed;
@@ -378,7 +378,7 @@
         Roamie.sfx?.play('listen');
         return;
       }
-      listen = a.listen({ placeholder: m.mode === 'handsfree' ? 'Listening… tap again to send' : 'Listening…' });
+      listen = a.listen({ placeholder: m.mode === 'handsfree' ? 'מקשיב… לחיצה נוספת לשליחה' : 'מקשיב…' });
     } else if (m.type === 'partial') listen?.set(m.text);
     else if (m.type === 'level') listen?.level(m.v);
     else if (m.type === 'state' && m.state === 'processing') listen?.processing();

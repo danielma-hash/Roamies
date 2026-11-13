@@ -41,11 +41,11 @@
 .rp-body p.lead { font-weight: 600; font-size: 13.5px; line-height: 1.5; color: var(--ink); margin-bottom: 10px; }
 .rp-body h4 { margin: 12px 0 6px; font: 600 11px/1.3 "Martian Mono", ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
 .rp-body ul, .rp-body ol { margin: 0 0 8px; padding: 0; list-style: none; }
-.rp-body li { position: relative; padding-left: 16px; margin: 0 0 6px; color: var(--ink-2); }
-.rp-body ul > li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; background: var(--accent); }
+.rp-body li { position: relative; padding-inline-start: 16px; margin: 0 0 6px; color: var(--ink-2); }
+.rp-body ul > li::before { content: ""; position: absolute; inset-inline-start: 2px; top: .62em; width: 5px; height: 5px; background: var(--accent); }
 .rp-body ol { counter-reset: n; }
-.rp-body ol > li { counter-increment: n; padding-left: 22px; }
-.rp-body ol > li::before { content: counter(n) "."; position: absolute; left: 0; color: var(--accent); }
+.rp-body ol > li { counter-increment: n; padding-inline-start: 22px; }
+.rp-body ol > li::before { content: counter(n) "."; position: absolute; inset-inline-start: 0; color: var(--accent); }
 .rp-body b { color: var(--ink); font-weight: 600; }
 .rp-body em { font-style: italic; color: var(--ink); }
 .rp-body s { color: var(--ink-3); }
@@ -54,7 +54,7 @@
 .rp-body a:hover { color: #a8ffed; }
 .rp-body a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .rp-body li > ul, .rp-body li > ol { margin: 6px 0 0; }
-.rp-body blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line-hi); color: var(--ink-2); }
+.rp-body blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-inline-start: 2px solid var(--line-hi); color: var(--ink-2); }
 .rp-body blockquote p { margin: 0 0 4px; }
 .rp-body pre { margin: 0 0 10px; padding: 9px 11px; background: #030c0d; border: 1px solid #12302e; overflow-x: auto;
   font: 400 11.5px/1.55 "Martian Mono", ui-monospace, monospace; color: var(--ink-2); white-space: pre; }
@@ -62,10 +62,10 @@
 .rp-body hr { border: 0; border-top: 1px solid #12302e; margin: 10px 0; }
 .rp-table { overflow-x: auto; margin: 0 0 10px; }
 .rp-body table { border-collapse: collapse; font-size: 11.5px; line-height: 1.45; min-width: 100%; }
-.rp-body th, .rp-body td { text-align: left; padding: 5px 9px; border-bottom: 1px solid #12302e; vertical-align: top; color: var(--ink-2); }
+.rp-body th, .rp-body td { text-align: start; padding: 5px 9px; border-bottom: 1px solid #12302e; vertical-align: top; color: var(--ink-2); }
 .rp-body th { color: var(--ink); font-weight: 600; border-bottom-color: var(--line-hi); }
 .rp-src { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid #12302e; font-size: 11px; line-height: 1.5; color: var(--ink-3); }
-.rp-caret { display: inline-block; width: 7px; height: 1.05em; vertical-align: -0.15em; background: var(--accent); margin-left: 2px; animation: rp-blink .9s steps(2, jump-none) infinite; }
+.rp-caret { display: inline-block; width: 7px; height: 1.05em; vertical-align: -0.15em; background: var(--accent); margin-inline-start: 2px; animation: rp-blink .9s steps(2, jump-none) infinite; }
 @keyframes rp-blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .rp { transform: none; transition: opacity .1s linear; } .rp.busy .rp-dot, .rp-caret { animation: none; } }
 `;
@@ -128,7 +128,7 @@
     el = document.createElement('section');
     el.className = 'rp';
     el.setAttribute('role', 'region');
-    el.setAttribute('aria-label', 'Answer from the web');
+    el.setAttribute('aria-label', "תשובה מהרשת");
     const inner = document.createElement('div'); inner.className = 'rp-in';
     const head = document.createElement('div'); head.className = 'rp-head';
     const dot = document.createElement('span'); dot.className = 'rp-dot'; dot.setAttribute('aria-hidden', 'true');
@@ -215,7 +215,7 @@
     get center() { if (!api.isOpen) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
     // Where it is, so drawn cards keep off it: [x, y, w, h], or null when it's closed.
     get rect() { if (!api.isOpen) return null; const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; },
-    open({ status = 'Searching the web', near } = {}) {
+    open({ status = "מחפש ברשת", near } = {}) {
       clearTimeout(closeTimer);
       if (!el) build();
       const wasOpen = api.isOpen;
@@ -230,7 +230,7 @@
     },
     status(s) { if (el) statusEl.textContent = s; return api; },
     append(s) { if (!el) return api; text += s; schedule(); return api; },
-    end(label = 'From the web') {
+    end(label = "מקורות מהרשת") {
       if (!el) return api;
       streaming = false; el.classList.remove('busy'); statusEl.textContent = label;
       schedule(); armClose();

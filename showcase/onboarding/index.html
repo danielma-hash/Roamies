@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>Welcome to Roamies</title>
+<title>ברוכים הבאים ל־Roamies</title>
 <link rel="stylesheet" href="onboarding.css">
+<link rel="stylesheet" href="../roamies/hebrew.css">
+<script src="../roamies/hebrew.js"></script>
 </head>
 <body>
 <div class="drag" id="drag" aria-hidden="true"></div>
@@ -19,95 +21,95 @@
     </header>
 
     <section class="step" id="step-welcome" data-name="Welcome" aria-labelledby="h-0">
-      <h1 id="h-0">Hi, I'm Roamie.</h1>
-      <p class="lead">I live on your screen, help with your work and keep you on track. Setup takes about a minute.</p>
+      <h1 id="h-0">שלום, אני רומי.</h1>
+      <p class="lead">אני נמצא על המסך שלך, עוזר בעבודה ושומר איתך על ההתקדמות. ההגדרה לוקחת כדקה.</p>
       <div class="px keyrow">
         <div class="kline stack">
-          <div><h2 id="look-h">My look</h2><p>Each has its own voice. Change it in Settings.</p></div>
+          <div><h2 id="look-h">הדמות שלי</h2><p>אפשר לבחור קול עברי בהגדרות הקול.</p></div>
           <div class="chords" id="looks" role="radiogroup" aria-labelledby="look-h"></div>
         </div>
         <div class="kline">
-          <div><h2 id="size-h">My size</h2><p>Cursor is a little pointer.</p></div>
+          <div><h2 id="size-h">הגודל שלי</h2><p>סמן הוא דמות קטנה ליד העכבר.</p></div>
           <div class="chords" id="sizes" role="radiogroup" aria-labelledby="size-h"></div>
         </div>
       </div>
     </section>
 
     <section class="step" id="step-perms" data-name="Permissions" aria-labelledby="h-1" hidden>
-      <h1 id="h-1">Let me help</h1>
-      <p class="lead" id="perm-lead">Only used when you ask me something.</p>
+      <h1 id="h-1">לאפשר לי לעזור</h1>
+      <p class="lead" id="perm-lead">בשימוש רק כשאתה מבקש.</p>
       <ul class="rows" id="perm-rows" aria-live="polite"></ul>
-      <p class="note">When you ask about your screen, screenshots and window text go to the AI you connect. Nothing goes to the developer.</p>
+      <p class="note">בזמן דיבור האודיו נשלח ל־Soniox לתמלול, וטקסט התשובות נשלח ל־Cartesia להשמעה. כשאתה שואל על המסך, צילום המסך והטקסט נשלחים למודל שבחרת.</p>
     </section>
 
     <section class="step" id="step-ai" data-name="Connect AI" aria-labelledby="h-2" hidden>
-      <h1 id="h-2">Give me a brain</h1>
-      <p class="lead" id="ai-lead">Sign in with an AI account you have. Using GG Coder? You're already in.</p>
+      <h1 id="h-2">בחירת מודל AI</h1>
+      <p class="lead" id="ai-lead">אפשר להתחבר לחשבון AI קיים. משתמש ב־GG Coder? החיבור משותף.</p>
       <div class="providers two" id="providers"></div>
       <div class="providers keys" id="key-providers" hidden></div>
       <form class="inline" id="code-form" hidden>
-        <label for="code-input" id="code-label">Paste the code from your browser</label>
+        <label for="code-input" id="code-label">הדבקת הקוד מהדפדפן</label>
         <div class="field-row">
           <span class="px field"><input id="code-input" autocomplete="off" spellcheck="false"></span>
-          <button class="px btn primary" type="submit">Submit</button>
+          <button class="px btn primary" type="submit">שליחה</button>
         </div>
       </form>
       <form class="inline" id="key-form" hidden>
         <div class="label-row">
-          <label for="key-input" id="key-label">API key</label>
-          <button class="link" type="button" id="key-link" hidden>Get a key</button>
+          <label for="key-input" id="key-label">מפתח API</label>
+          <button class="link" type="button" id="key-link" hidden>קבלת מפתח</button>
         </div>
         <div class="field-row">
           <span class="px field"><input id="key-input" type="password" placeholder="Paste API key" autocomplete="off" spellcheck="false" maxlength="1000"></span>
-          <button class="px btn primary" type="submit" id="key-save">Save</button>
+          <button class="px btn primary" type="submit" id="key-save">שמירה</button>
         </div>
       </form>
-      <button class="link" type="button" id="key-toggle">Use an API key instead</button>
+      <button class="link" type="button" id="key-toggle">שימוש במפתח API במקום</button>
       <p class="error" id="login-error" role="alert" hidden></p>
-      <p class="note">Your messages, and screenshots when you ask about the screen, go to the AI provider you pick, under its privacy policy.</p>
+      <p class="note">ההודעות שלך וצילומי מסך שביקשת נשלחים לספק ה־AI שבחרת, בהתאם למדיניות הפרטיות שלו.</p>
     </section>
 
     <section class="step" id="step-voice" data-name="Replies" aria-labelledby="h-voice" hidden>
-      <h1 id="h-voice">How should I reply?</h1>
-      <p class="lead">Text shows in my bubbles. Voice also says it out loud. Change it any time in the Roamies panel.</p>
+      <h1 id="h-voice">איך לענות לך?</h1>
+      <p class="lead">התשובות מופיעות בבועות טקסט. במצב קול הן גם מושמעות. אפשר לשנות בכל זמן בלוח הבקרה.</p>
       <div class="providers two" id="replies" role="radiogroup" aria-labelledby="h-voice"></div>
-      <button class="link" type="button" id="fish-change" aria-controls="fish-form" aria-expanded="false" hidden>Change key</button>
+      <button class="link" type="button" id="fish-change" aria-controls="fish-form" aria-expanded="false" hidden>שינוי מפתח</button>
       <form class="inline" id="fish-form" hidden>
         <div class="label-row">
-          <label for="fish-input" id="fish-label">Cartesia API key</label>
-          <button class="link" type="button" id="fish-link">Get a Cartesia key</button>
+          <label for="fish-input" id="fish-label">מפתח API של Cartesia</label>
+          <button class="link" type="button" id="fish-link">קבלת מפתח Cartesia</button>
         </div>
         <div class="field-row">
           <span class="px field"><input id="fish-input" type="password" placeholder="Paste your key" autocomplete="off" spellcheck="false" maxlength="1000" aria-describedby="fish-note"></span>
-          <button class="px btn primary" type="submit" id="fish-save">Save</button>
+          <button class="px btn primary" type="submit" id="fish-save">שמירה</button>
         </div>
-        <p class="note" id="fish-note">Spoken replies are billed to your own Cartesia account.</p>
+        <p class="note" id="fish-note">הדיבור מחויב בחשבון Cartesia שלך.</p>
       </form>
       <p class="error" id="fish-error" role="alert" hidden></p>
       <ul class="rows" id="talk-rows" hidden>
-        <li class="px row"><div><h2>Auto-listen</h2><p>Mic opens when I ask you something.</p></div><button class="px switch" type="button" role="switch" id="autolisten-switch" aria-label="Auto-listen"></button></li>
+        <li class="px row"><div><h2>האזנה אוטומטית</h2><p>המיקרופון נפתח כשאני שואל אותך שאלה.</p></div><button class="px switch" type="button" role="switch" id="autolisten-switch" aria-label="Auto-listen"></button></li>
         <li class="px row" id="wake-row"><div><h2>Wake word</h2><p>Say “Hey Roamies” to talk. Mic stays on.</p></div><button class="px switch" type="button" role="switch" id="wake-switch" aria-label="Wake word"></button></li>
       </ul>
     </section>
 
     <section class="step" id="step-demo" data-name="What I can do" aria-labelledby="h-demo" hidden>
-      <h1 id="h-demo">Here's what I can do</h1>
+      <h1 id="h-demo">מה אני יודע לעשות</h1>
       <div class="demo-head">
-        <p class="lead" id="demo-lead">Watch me draw on your desktop.</p>
-        <button class="px btn primary" type="button" id="demo-again">Try me out</button>
+        <p class="lead" id="demo-lead">אפשר לראות מה אני מציג על שולחן העבודה.</p>
+        <button class="px btn primary" type="button" id="demo-again">ניסיון</button>
       </div>
       <p class="sr-only" id="demo-say" aria-live="polite"></p>
       <ul class="rows" id="demo-rows"></ul>
     </section>
 
     <section class="step" id="step-keys" data-name="Shortcuts" aria-labelledby="h-3" hidden>
-      <h1 id="h-3">Your shortcuts</h1>
-      <p class="lead" id="keys-lead">These work from anywhere. Change them if you like.</p>
+      <h1 id="h-3">קיצורי המקשים שלך</h1>
+      <p class="lead" id="keys-lead">הקיצורים עובדים מכל מקום ואפשר לשנות אותם.</p>
       <div class="px keyrow" id="talk-row">
         <div class="keyrow-head">
-          <h2>Talk to me</h2>
-          <p id="talk-hint">Hold to talk. Tap to listen hands-free.</p>
-          <p id="draw-tip" hidden>Hold and circle something to mark it.</p>
+          <h2>לדבר איתי</h2>
+          <p id="talk-hint">החזק כדי לדבר. לחיצה קצרה מפעילה האזנה ללא החזקה.</p>
+          <p id="draw-tip" hidden>אפשר להחזיק ולהקיף משהו כדי לסמן אותו.</p>
         </div>
         <div class="chords" id="chords" role="radiogroup" aria-label="Talk shortcut"></div>
         <div class="try" id="try">
@@ -118,27 +120,27 @@
       </div>
       <div class="px keyrow" id="hotkey-row">
         <div class="kline">
-          <div><h2 id="write-h">Type to me</h2><p>Tap, then type.</p></div>
+          <div><h2 id="write-h">לכתוב לי</h2><p>לחיצה קצרה, ואז הקלדה.</p></div>
           <div class="chords" id="write-chords" role="radiogroup" aria-labelledby="write-h"></div>
         </div>
         <div class="kline">
-          <div><h2>Show or hide me</h2><p>Bring me back any time.</p></div>
+          <div><h2>הצגה או הסתרה</h2><p>אפשר להציג אותי מחדש בכל זמן.</p></div>
           <div class="summon">
             <span class="caps" id="summon-caps"></span>
-            <button class="px btn ghost" type="button" id="summon-change" aria-label="Change the show or hide shortcut">Change</button>
+            <button class="px btn ghost" type="button" id="summon-change" aria-label="Change the show or hide shortcut">שינוי</button>
           </div>
         </div>
         <div class="kline" id="snap-line">
-          <div><h2>Ask about an area</h2><p>Drag a box, then ask.</p></div>
+          <div><h2>שאלה על אזור במסך</h2><p>סמן מלבן, ואז שאל.</p></div>
           <div class="summon">
             <span class="caps" id="snap-caps"></span>
-            <button class="px btn ghost" type="button" id="snap-change" aria-label="Change the ask about an area shortcut">Change</button>
+            <button class="px btn ghost" type="button" id="snap-change" aria-label="Change the ask about an area shortcut">שינוי</button>
           </div>
         </div>
       </div>
       <div class="px keyrow" id="bind-row" hidden>
         <div class="keyrow-head">
-          <h2>Pick your keys</h2>
+          <h2>בחירת המקשים שלך</h2>
           <p>Your desktop doesn't let apps grab keys, so add each as a custom shortcut in its keyboard settings (GNOME: Settings › Keyboard; KDE: System Settings › Shortcuts).</p>
         </div>
         <div id="bind-list"></div>
@@ -148,27 +150,27 @@
 
     <section class="step" id="step-chat" data-name="About you" aria-labelledby="chat-q" hidden>
       <p class="count" id="chat-count"></p>
-      <h1 id="chat-q">Getting to know you</h1>
+      <h1 id="chat-q">נעים להכיר אותך</h1>
       <p class="lead chat-lead" id="chat-lead"></p>
-      <p class="waiting chat-busy" id="chat-busy" hidden><span class="led busy"></span> Thinking</p>
+      <p class="waiting chat-busy" id="chat-busy" hidden><span class="led busy"></span>  חושב</p>
       <!-- Each turn read out once it's all in, not word by word as it reveals. -->
       <p class="sr-only" id="chat-say" aria-live="polite"></p>
       <form class="inline chat-form" id="chat-form" hidden>
-        <label for="chat-input" class="sr-only">Your answer</label>
+        <label for="chat-input" class="sr-only">התשובה שלך</label>
         <div class="field-row">
           <span class="px field"><input id="chat-input" maxlength="500" autocomplete="off" placeholder="Type your answer…"></span>
         </div>
         <p class="chat-hint" id="chat-hint" hidden></p>
-        <p class="chat-talk" id="chat-talk" hidden><span>Or hold</span> <span id="chat-talk-keys"></span> <span>and talk</span><span class="meter" id="chat-meter" aria-hidden="true"></span></p>
+        <p class="chat-talk" id="chat-talk" hidden><span>או להחזיק</span> <span id="chat-talk-keys"></span> <span>ולדבר</span><span class="meter" id="chat-meter" aria-hidden="true"></span></p>
       </form>
       <div class="chat-facts" id="chat-facts" hidden>
-        <h2>What I'll remember</h2>
+        <h2>מה אזכור</h2>
         <ul class="rows" id="chat-facts-list"></ul>
       </div>
     </section>
     <section class="step" id="step-find" data-name="Find me" aria-labelledby="h-4" hidden>
-      <h1 id="h-4">Find me up here</h1>
-      <p class="lead"><span id="find-where">I live in your menu bar. Click </span><span class="glyph"><svg class="trayicon" viewBox="0 0 36 36" aria-hidden="true" fill="currentColor"><rect x="30" y="3" width="2" height="2"/><rect x="27" y="6" width="2" height="2"/><rect x="30" y="6" width="2" height="2"/><rect x="33" y="6" width="2" height="2"/><rect x="30" y="9" width="2" height="2"/><rect x="6" y="12" width="2" height="2"/><rect x="9" y="12" width="2" height="2"/><rect x="12" y="12" width="2" height="2"/><rect x="15" y="12" width="2" height="2"/><rect x="3" y="15" width="2" height="2"/><rect x="6" y="15" width="2" height="2"/><rect x="9" y="15" width="2" height="2"/><rect x="12" y="15" width="2" height="2"/><rect x="15" y="15" width="2" height="2"/><rect x="18" y="15" width="2" height="2"/><rect x="0" y="18" width="2" height="2"/><rect x="3" y="18" width="2" height="2"/><rect x="9" y="18" width="2" height="2"/><rect x="12" y="18" width="2" height="2"/><rect x="18" y="18" width="2" height="2"/><rect x="21" y="18" width="2" height="2"/><rect x="0" y="21" width="2" height="2"/><rect x="3" y="21" width="2" height="2"/><rect x="9" y="21" width="2" height="2"/><rect x="12" y="21" width="2" height="2"/><rect x="18" y="21" width="2" height="2"/><rect x="21" y="21" width="2" height="2"/><rect x="0" y="24" width="2" height="2"/><rect x="3" y="24" width="2" height="2"/><rect x="6" y="24" width="2" height="2"/><rect x="9" y="24" width="2" height="2"/><rect x="12" y="24" width="2" height="2"/><rect x="15" y="24" width="2" height="2"/><rect x="18" y="24" width="2" height="2"/><rect x="21" y="24" width="2" height="2"/><rect x="3" y="27" width="2" height="2"/><rect x="6" y="27" width="2" height="2"/><rect x="9" y="27" width="2" height="2"/><rect x="12" y="27" width="2" height="2"/><rect x="15" y="27" width="2" height="2"/><rect x="18" y="27" width="2" height="2"/><rect x="6" y="30" width="2" height="2"/><rect x="9" y="30" width="2" height="2"/><rect x="12" y="30" width="2" height="2"/><rect x="15" y="30" width="2" height="2"/></svg></span><span class="sr-only">the Roamies icon</span> for chats, settings, sign-ins and this guide.</p>
+      <h1 id="h-4">אפשר למצוא אותי כאן למעלה</h1>
+      <p class="lead"><span id="find-where">אני נמצא בשורת התפריטים. לחץ על  </span><span class="glyph"><svg class="trayicon" viewBox="0 0 36 36" aria-hidden="true" fill="currentColor"><rect x="30" y="3" width="2" height="2"/><rect x="27" y="6" width="2" height="2"/><rect x="30" y="6" width="2" height="2"/><rect x="33" y="6" width="2" height="2"/><rect x="30" y="9" width="2" height="2"/><rect x="6" y="12" width="2" height="2"/><rect x="9" y="12" width="2" height="2"/><rect x="12" y="12" width="2" height="2"/><rect x="15" y="12" width="2" height="2"/><rect x="3" y="15" width="2" height="2"/><rect x="6" y="15" width="2" height="2"/><rect x="9" y="15" width="2" height="2"/><rect x="12" y="15" width="2" height="2"/><rect x="15" y="15" width="2" height="2"/><rect x="18" y="15" width="2" height="2"/><rect x="0" y="18" width="2" height="2"/><rect x="3" y="18" width="2" height="2"/><rect x="9" y="18" width="2" height="2"/><rect x="12" y="18" width="2" height="2"/><rect x="18" y="18" width="2" height="2"/><rect x="21" y="18" width="2" height="2"/><rect x="0" y="21" width="2" height="2"/><rect x="3" y="21" width="2" height="2"/><rect x="9" y="21" width="2" height="2"/><rect x="12" y="21" width="2" height="2"/><rect x="18" y="21" width="2" height="2"/><rect x="21" y="21" width="2" height="2"/><rect x="0" y="24" width="2" height="2"/><rect x="3" y="24" width="2" height="2"/><rect x="6" y="24" width="2" height="2"/><rect x="9" y="24" width="2" height="2"/><rect x="12" y="24" width="2" height="2"/><rect x="15" y="24" width="2" height="2"/><rect x="18" y="24" width="2" height="2"/><rect x="21" y="24" width="2" height="2"/><rect x="3" y="27" width="2" height="2"/><rect x="6" y="27" width="2" height="2"/><rect x="9" y="27" width="2" height="2"/><rect x="12" y="27" width="2" height="2"/><rect x="15" y="27" width="2" height="2"/><rect x="18" y="27" width="2" height="2"/><rect x="6" y="30" width="2" height="2"/><rect x="9" y="30" width="2" height="2"/><rect x="12" y="30" width="2" height="2"/><rect x="15" y="30" width="2" height="2"/></svg></span><span class="sr-only">הסמל של Roamies</span> לשיחות, הגדרות, התחברות והמדריך הזה.</p>
       <div class="px menubar" id="find-bar" aria-hidden="true">
         <span class="mb-more">^</span>
         <span class="mb-item"></span><span class="mb-item short"></span><span class="mb-item"></span>
@@ -180,10 +182,10 @@
     </section>
 
     <footer class="nav">
-      <button class="btn text" type="button" id="back">Back</button>
+      <button class="btn text" type="button" id="back">חזרה</button>
       <span class="spacer"></span>
-      <button class="link" type="button" id="skip" hidden>Skip for now</button>
-      <button class="px btn primary" type="button" id="next">Let's go</button>
+      <button class="link" type="button" id="skip" hidden>דילוג בינתיים</button>
+      <button class="px btn primary" type="button" id="next">אפשר להתחיל</button>
     </footer>
   </main>
 </div>

@@ -12,7 +12,7 @@ import {
   AUTH_PROVIDERS, AuthStorage, OPENAI_CHATGPT_KEY, apiKeyStorageKeys, claudeCodeEnv, dualAuthProvider, getAuthStorageKeys, getContextWindow, getDefaultModel, getModel,
   getModelsForProvider, loginChatGPT, resolveClaudeCodeBinary, signInWithClaudeCode, storageKeyProvider,
 } from '@kenkaiiii/gg-core';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -33,6 +33,7 @@ import { QUESTIONS, openNote, answerTurn, wantsSkip, endsChat, splitTurn, plain,
 import { SpeechText, CueFilter, endsWithQuestion } from './speech.mjs';
 import { createCartesiaSpeaker as createSpeaker } from './cartesia-speaker.ts';
 import { DEFAULT_VOICE, CARTESIA_CHOICES as FISH_CHOICES, CARTESIA_VOICES } from './cartesia-speaker.ts';
+import { translate as he, HEBREW_INSTRUCTIONS } from './hebrew.ts';
 import { createSecrets, retryLoad } from './secrets.mjs';
 import { createActivity } from './activity.mjs';
 import { canCircle, canSnap, hasHands, hasHotkeys, hasVoice, linuxSession, micTrouble, needsVoiceModel, platformLine, samePair, seesPointer, writeChord, writeChords } from './platform.mjs';
@@ -57,7 +58,7 @@ const ui = (msg) => {
   send({ type: 'ui', msg });
 };
 const ob = (msg) => send({ type: 'onboard', msg });
-const say = (text, mood) => (onboarding ? ob({ kind: 'say', text, mood }) : ui({ kind: 'say', text, mood }));
+const say = (text, mood) => (onboarding ? ob({ kind: 'say', text: he(text), mood }) : ui({ kind: 'say', text: he(text), mood }));
 const sayOut = say;
 
 const VERSION = process.env.ROAMIES_VERSION || '0.0.0';
@@ -85,7 +86,7 @@ const DEFAULT_KEYS = process.platform === 'win32'
   : { talk: ['control', 'option'], summon: 'Control+Alt+KeyS', snap: 'Control+Alt+KeyA', list: 'Control+Alt+KeyL' };
 const DEFAULTS = {
   provider: null, model: null, sound: true, allowActions: false, voice: true,
-  onboarded: false, onboardStep: 0, filesAsked: false, keys: DEFAULT_KEYS, muteWhileTalking: true, autoListen: false, wakeWord: false, setupVersion: 0, size: 'default', look: 'classic', introDone: false,
+  onboarded: false, onboardStep: 0, filesAsked: false, keys: DEFAULT_KEYS, muteWhileTalking: true, autoListen: false, wakeWord: false, setupVersion: 0, size: 'default', look: 'jarvis', introDone: false,
   cartesiaVoice: DEFAULT_VOICE, language: 'he',
   replies: 'voice', // 'voice': spoken with Cartesia as well as shown
   fishModel: FISH_CHOICES[0].id, // Kept for the existing panel protocol.
@@ -242,15 +243,7 @@ function ensureModel() {
 // Which of the provider's stored credentials this model uses (gemini-api, kimi-code, the ChatGPT plan before an OpenAI key…).
 const credsFor = (provider = config.provider, model = config.model) => auth.resolveCredentials(provider, { storageKeys: getAuthStorageKeys(provider, model) });
 
-const userName = (() => {
-  try {
-    if (process.platform === 'darwin') {
-      const full = String(execFileSync('id', ['-F'])).trim();
-      if (full) return full.split(/\s+/)[0];
-    }
-  } catch {}
-  return os.userInfo().username;
-})();
+const userName = 'דניאל';
 
 // ---------- tools ----------
 // The open request's voice, if replies are spoken: draw's beat lines are said on it, in order with the reply.
@@ -354,8 +347,8 @@ const VOICE_STYLE = `You talk out loud: what you write is spoken in your voice a
 Reply in Hebrew by default, unless the user requests another language. Do not include bracketed performance cues.
 Before anything slow (searching the web, fetching or reading a page or file, looking at the screen, acting in an app, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it, checking Paris."), then call the tool in the same reply, so they're never left in silence. No beat when you answer straight away; never describe your steps; don't repeat the beat after the tool, go straight to the answer. In longer work, one short line before each new stage, not before every call.
 `;
-const stablePrompt = () => `You are ${lookName()}, ${LOOK_BODY[config.look] ?? LOOK_BODY.classic} who lives on ${userName}'s screen as a desktop companion. You live in Roamies, a desktop app by Ken Kai (Mac, Windows and Linux) that puts little companions on your screen; this is Roamies ${VERSION}. Your look (the Appearance page) is also your name and your voice: Roamie, JARVIS, Anime Girl, Sarah or Adrian. If they switch, you're the new one; never call yourself Sidekick.
-About Roamies, for when ${userName} asks about you or the app: ${MAC ? 'it lives in the menu bar at the top of the screen (no Dock icon)' : LINUX ? 'it lives in the system tray (no window of its own); GNOME shows tray icons only with the AppIndicator extension, and opening Roamies again from the app list opens the panel, tray or not' : 'it lives in the system tray at the bottom right of the taskbar (no taskbar button); Windows may tuck the icon behind the ^ arrow next to the clock, and dragging it onto the taskbar keeps it in view'}. ${LINUX ? 'Clicking the tray icon shows a short menu (Open Panel,' : `Clicking the ${MAC ? 'menu bar' : 'tray'} icon opens the Roamies panel; right-clicking it shows a short menu (Open Panel,`} Show ${lookName()}, Ask ${lookName()}…, ${SNAP_OK ? 'Ask About an Area…, ' : ''}Stop, Quit Roamies). The panel has a header (your name, the Roamies version with one update button beside it: Check for Updates, which becomes Update to <version> when one is out and installs it and restarts in one go; By Ken Kai under the name; and Quit at the top right, which asks to confirm) and a sidebar of pages; long lists show a page at a time, with arrows in the page's footer. Home: a list of what you did recently (questions, files read, searches, reminders), today's usage, and buttons for Ask, Show List (reminders and commitments on screen: Today and Later; tick them off there; finished ones clear at midnight)${SNAP_OK ? ', Ask About an Area' : ''}, Stop and New Conversation. Memory: two tabs, What I Remember (everything you remember about them, each with Forget, a search once there's more than a page, and Forget Everything in the footer) and Commitments (their open commitments, Done or Drop), with Get to Know Me at the end of the tab row (a four-question chat so you learn who they are and what they're going for). Then the settings pages: Model (pick the AI provider and model, and sign in to providers), Appearance (Look: ${LOOKS.map(([, label]) => label).join(', ').replace(/, ([^,]*)$/, ' or $1')}, each with its own voice; Size: Default, Small${POINTER_OK ? ' or Cursor, a little arrow pointer' : ''}), Voice (Replies: Text Only, or Voice and Text, which speaks replies out loud with Cartesia and needs their own Cartesia API key, added right there; Voice Model: Cartesia Sonic 3.6, with five male and five female Hebrew voices, billed to their own Cartesia account${VOICE_OK ? `; Voice Control, ${HOTKEYS_OK ? 'hold the talk keys to talk' : 'press the talk shortcut to talk'}` : ''}), Behavior (Sound Effects, Allow File Edits & Commands, ${VOICE_OK ? 'Auto-listen (open the mic when you end on a question), ' : ''}Open at Login), and About (who made Roamies with links, Setup Guide, Show Logs, Save Diagnostics). Updates are signature-checked${LINUX ? '; they install by themselves when Roamies runs as an AppImage; installed from a .deb or .rpm, the update button opens the download page instead' : ''}. When something isn't working (the microphone, voice, the panel, a crash, an error), tell them to use Save Diagnostics (in About, or the tray icon's menu): it saves one .log file in Downloads with the logs, system and microphone details, keys and personal details removed, for them to attach to a GitHub issue at github.com/KenKaiii/Roamies/issues or send to Ken. Sign-in is shared with GG Coder. Downloads and source: github.com/KenKaiii/Roamies. Don't invent features or settings that aren't listed here.
+const stablePrompt = () => `You are ${lookName()}, ${LOOK_BODY[config.look] ?? LOOK_BODY.classic} who lives on ${userName}'s screen as a desktop companion. You live in Roamies, a desktop app by Ken Kai (Mac, Windows and Linux) that puts little companions on your screen; this is Roamies ${VERSION}. Your look (the Appearance page) is also your name, while the Hebrew voice is chosen separately: Roamie, JARVIS, Anime Girl, Sarah or Adrian. If they switch, you're the new one; never call yourself Sidekick.
+About Roamies, for when ${userName} asks about you or the app: ${MAC ? 'it lives in the menu bar at the top of the screen (no Dock icon)' : LINUX ? 'it lives in the system tray (no window of its own); GNOME shows tray icons only with the AppIndicator extension, and opening Roamies again from the app list opens the panel, tray or not' : 'it lives in the system tray at the bottom right of the taskbar (no taskbar button); Windows may tuck the icon behind the ^ arrow next to the clock, and dragging it onto the taskbar keeps it in view'}. ${LINUX ? 'Clicking the tray icon shows a short menu (Open Panel,' : `Clicking the ${MAC ? 'menu bar' : 'tray'} icon opens the Roamies panel; right-clicking it shows a short menu (Open Panel,`} Show ${lookName()}, Ask ${lookName()}…, ${SNAP_OK ? 'Ask About an Area…, ' : ''}Stop, Quit Roamies). The panel has a header (your name, the Roamies version with one update button beside it: Check for Updates, which becomes Update to <version> when one is out and installs it and restarts in one go; By Ken Kai under the name; and Quit at the top right, which asks to confirm) and a sidebar of pages; long lists show a page at a time, with arrows in the page's footer. Home: a list of what you did recently (questions, files read, searches, reminders), today's usage, and buttons for Ask, Show List (reminders and commitments on screen: Today and Later; tick them off there; finished ones clear at midnight)${SNAP_OK ? ', Ask About an Area' : ''}, Stop and New Conversation. Memory: two tabs, What I Remember (everything you remember about them, each with Forget, a search once there's more than a page, and Forget Everything in the footer) and Commitments (their open commitments, Done or Drop), with Get to Know Me at the end of the tab row (a four-question chat so you learn who they are and what they're going for). Then the settings pages: Model (pick the AI provider and model, and sign in to providers), Appearance (Look: ${LOOKS.map(([, label]) => label).join(', ').replace(/, ([^,]*)$/, ' or $1')}, with a separately selected Hebrew voice; Size: Default, Small${POINTER_OK ? ' or Cursor, a little arrow pointer' : ''}), Voice (Replies: Text Only, or Voice and Text, which speaks replies out loud with Cartesia and needs their own Cartesia API key, added right there; Voice Model: Cartesia Sonic 3.6, with five male and five female Hebrew voices, billed to their own Cartesia account${VOICE_OK ? `; Voice Control, ${HOTKEYS_OK ? 'hold the talk keys to talk' : 'press the talk shortcut to talk'}` : ''}), Behavior (Sound Effects, Allow File Edits & Commands, ${VOICE_OK ? 'Auto-listen (open the mic when you end on a question), ' : ''}Open at Login), and About (who made Roamies with links, Setup Guide, Show Logs, Save Diagnostics). Updates are signature-checked${LINUX ? '; they install by themselves when Roamies runs as an AppImage; installed from a .deb or .rpm, the update button opens the download page instead' : ''}. When something isn't working (the microphone, voice, the panel, a crash, an error), tell them to use Save Diagnostics (in About, or the tray icon's menu): it saves one .log file in Downloads with the logs, system and microphone details, keys and personal details removed, for them to attach to a GitHub issue at github.com/KenKaiii/Roamies/issues or send to Ken. Sign-in is shared with GG Coder. Downloads and source: github.com/KenKaiii/Roamies. Don't invent features or settings that aren't listed here.
 ${replyStyle()}Your body does the acting: to act out a feeling, start your reply with one tag, which is never shown: ${EMOTES.map((e) => `[${e}]`).join(' ')}. hype celebrates a win, upset is for when they're dodging work, remind nudges about something they said they'd do, motivate is a push to start, wave is hello or goodbye. Most replies need no tag.
 Lead with the answer: the fact, number, pick or result they asked for, then only the context that makes it useful, then stop. A count or total gathered over several pages, files or results: note each one's count in a few words as you go ("Page 1: two."), add those up, and check the total you lead with against the items you then name. No opener about checking, looking or searching ("Let me see…", "I found…")${VOICE_ON() ? ', apart from the one short beat before something slow' : ''}.
 After using a tool, never repeat what you already said; only add what's new.
@@ -395,7 +388,7 @@ ${VOICE_OK ? `- Voice: ${!config.voice ? 'off' : voiceReady() ? `on; ${HOTKEYS_O
 ${facts.length ? `What you know about ${userName}${total > facts.length ? ` (${facts.length} most relevant of ${total})` : ''}:\n${facts.map((f) => `- ${f.id}: ${f.text}`).join('\n')}` : `You don't know anything lasting about ${userName} yet.`}`;
   return { turn, memory };
 };
-const system = () => stablePrompt();
+const system = () => stablePrompt() + "\n\n" + HEBREW_INSTRUCTIONS;
 const LIVE_OPEN = '<live-state>', LIVE_CLOSE = '</live-state>';
 const stripLive = (text) => (typeof text === 'string' && text.startsWith(LIVE_OPEN) ? text.slice(text.indexOf(LIVE_CLOSE) + LIVE_CLOSE.length).replace(/^\n+/, '') : text);
 // Each request's live block is made once and kept on that message from then on, so earlier messages
@@ -437,8 +430,8 @@ function withLive(msgs) {
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const tzOffset = () => { const m = -new Date().getTimezoneOffset(), a = Math.abs(m); return `UTC${m >= 0 ? '+' : '-'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`; };
 // Seconds shown only when they matter (a reminder set for :45).
-const fmtWhen = (ms) => new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', ...(new Date(ms).getSeconds() ? { second: '2-digit' } : {}) });
-const stampNow = () => `${new Date().toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })} ${TZ}`;
+const fmtWhen = (ms) => new Date(ms).toLocaleString('he-IL', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', ...(new Date(ms).getSeconds() ? { second: '2-digit' } : {}) });
+const stampNow = () => `${new Date().toLocaleString('he-IL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })} ${TZ}`;
 // Ticked off today (on the list, from the menu or by Sidekick); cleared at midnight.
 function doneTodayText() {
   const L = listItems();
@@ -1183,11 +1176,11 @@ function onUpdateStatus(m) {
 // Today / Later, drawn by the overlay next to Sidekick. seconds: how long it stays up (0 = just update it if it's open).
 // flash: the item that just changed, so the overlay can animate it.
 const shortWhen = (ms, now = Date.now()) => {
-  const d = new Date(ms), t = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  if (ms < now && now - ms < 864e5 && new Date(now).toDateString() !== d.toDateString()) return `yday ${t}`;
+  const d = new Date(ms), t = d.toLocaleTimeString('he-IL', { hour: 'numeric', minute: '2-digit' });
+  if (ms < now && now - ms < 864e5 && new Date(now).toDateString() !== d.toDateString()) return `אתמול ${t}`;
   if (d.toDateString() === new Date(now).toDateString()) return t;
-  if (ms - now < 6 * 864e5 && ms > now) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${t}`;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  if (ms - now < 6 * 864e5 && ms > now) return `${d.toLocaleDateString('he-IL', { weekday: 'short' })} ${t}`;
+  return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'short' });
 };
 function showList({ seconds = 0, flash = null, toggle = false } = {}) {
   const now = Date.now(), L = listItems(now);
@@ -1286,7 +1279,7 @@ function menu() {
     { sep: true },
     { id: 'quit', label: 'Quit Roamies' },
   ];
-  send({ type: 'menu', items });
+  send({ type: 'menu', items: items.map((item) => item.label ? { ...item, label: he(item.label) } : item) });
   panel();
 }
 
@@ -1481,7 +1474,7 @@ async function onMenu(id) {
   else if (id === 'forgetall:yes') { const n = await clearFacts(); menu(); panelNote(`Forgot ${n} thing${n === 1 ? '' : 's'}.`); }
   else if (id === 'forgetall') {
     const ok = await ask({ placeholder: 'Type FORGET to erase everything I remember' });
-    if (ok?.trim().toUpperCase() === 'FORGET') { const n = await clearFacts(); menu(); say(`Done. I forgot ${n} thing${n === 1 ? '' : 's'} about you.`, 'concerned'); }
+    if (['FORGET', 'מחק'].includes(ok?.trim().toUpperCase())) { const n = await clearFacts(); menu(); say(`Done. I forgot ${n} thing${n === 1 ? '' : 's'} about you.`, 'concerned'); }
   } else if (id.startsWith('done:') || id.startsWith('drop:')) {
     const done = id.startsWith('done:');
     updateCommitment(id.slice(5), { status: done ? 'done' : 'dropped' }).then((c) => {
