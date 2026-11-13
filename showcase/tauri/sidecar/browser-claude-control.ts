@@ -18,7 +18,8 @@ function field(label: string, key: string, area = false): { label: HTMLLabelElem
   wrapper.append(input); return { label: wrapper, input };
 }
 function button(label: string, action: () => void): HTMLButtonElement {
-  const node = el('button', label); node.type = 'button'; node.className = 'workspace-button'; node.addEventListener('click', action); return node;
+  const node = el('button', label); node.type = 'button'; node.className = 'workspace-button'; node.addEventListener('pointerdown', (event) => event.preventDefault());
+  node.addEventListener('click', () => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); action(); }); return node;
 }
 export function renderClaudeInstruction(id: string, title: string, action: 'claude_control_resume' | 'claude_control_send', send: (action: ClaudeControlAction) => void): HTMLElement {
   const form = el('form'); form.setAttribute('aria-label', `הוראה לסשן ${title}`);
@@ -34,8 +35,9 @@ export function renderClaudeControl(runs: readonly ClaudeRunSnapshot[], send: (a
   const form = el('form'); const cwd = field('תיקיית פרויקט מלאה', 'new.cwd'); const title = field('שם הסשן', 'new.title'); title.input.maxLength = 160;
   const instruction = field('ההוראה הראשונה', 'new.instruction', true);
   const start = el('button', 'פתיחה עם ג׳ארוויס'); start.type = 'submit'; start.className = 'workspace-button';
+  start.addEventListener('pointerdown', (event) => event.preventDefault());
   form.append(cwd.label, title.label, instruction.label, start);
-  form.addEventListener('submit', (event) => { event.preventDefault(); if (form.reportValidity()) send({ type: 'workspace', action: 'claude_control_start', cwd: cwd.input.value.trim(), title: title.input.value.trim(), instruction: instruction.input.value.trim() }); });
+  form.addEventListener('submit', (event) => { event.preventDefault(); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); if (form.reportValidity()) send({ type: 'workspace', action: 'claude_control_start', cwd: cwd.input.value.trim(), title: title.input.value.trim(), instruction: instruction.input.value.trim() }); });
   details.append(form); section.append(details);
   if (!runs.length) section.append(el('p', 'אין כרגע סשנים בניהול ג׳ארוויס. אפשר לפתוח חדש או לבחור שיחה שמורה ולהמשיך אותה.'));
   for (const run of runs) {

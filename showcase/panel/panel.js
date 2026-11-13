@@ -540,7 +540,7 @@
     if (!state) return;
     const active = document.activeElement;
     // Never rebuild under someone typing a key: catch up when they leave the field.
-    if (!focusKey && !animate && (active?.tagName === 'INPUT' || active?.matches('textarea.workspace-control')) && active.closest('.pane')) { deferred = true; return; }
+    if (!focusKey && !animate && (active?.tagName === 'INPUT' || active?.closest('form.workspace-control')) && active.closest('.pane')) { deferred = true; return; }
     deferred = false;
     const keep = focusKey ?? active?.dataset?.k ?? (active?.id?.startsWith('key-') ? active.id : null);
     hideTip();
