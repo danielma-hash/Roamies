@@ -1,20 +1,10 @@
-// JARVIS look for the sidekick: no face and no body, the way the films show Stark's AI. A globe of LED points
-// with a lit heart (the Wave Sphere study), rippled by the voice. The cursor form is a HUD reticle, and the
-// moments the goo blob acts out (heart, bolt, alarm, anger, flame) become HUD read-outs here.
-// Everything else (following, bubbles, tools, sizes) is the same sidekick; 10-dither.js calls into this when
-// the look is 'jarvis'. Pure drawing: it only writes LED cells through the kit it's given.
+// JARVIS is a continuous Canvas hologram. The shared sidekick supplies poses, presence and sizes;
+// paths are drawn directly in CSS coordinates on its Retina-scaled canvas, without an LED grid.
 (() => {
   const R = window.Roamie;
   const TAU = Math.PI * 2;
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-
-  // Points spread evenly over a sphere (golden spiral). Enough to read as a globe at the default size.
-  const sphere = (n) => Array.from({ length: n }, (_, i) => {
-    const y = 1 - (2 * (i + 0.5)) / n, r = Math.sqrt(1 - y * y), a = i * 2.39996;
-    return [Math.cos(a) * r, y, Math.sin(a) * r];
-  });
-  const DOTS = { default: sphere(520), small: sphere(260) };
 
   // HUD glyphs for the blob's moments, drawn as read-outs beside the globe: heart, bolt, alarm, anger, flame.
   const GLYPH = {
@@ -37,88 +27,72 @@
       return 0.12 + 0.05 * Math.sin(t * 1.4);
     },
 
-    // The globe. st: { t, mode, act, actA, open, look:[x,y], speed, sq, wide, dizzy, sleepy }
-    // cx, cy are cells; rad the radius in cells. put(x, y, level) writes a cell, the brightest write wins.
-    body(k, cx, cy, rad, st) {
-      const { put, L, th } = k, t = st.t;
-      const dots = rad < 9 ? DOTS.small : DOTS.default;
-      const v = this.level(st);
-      const mode = st.mode, A = st.act;
-      // Spin: slow at rest, faster thinking, a quick whirl while 'hype'; dizzy wobbles it.
-      const spinRate = mode === 'think' ? 1.6 : A === 'hype' ? 3 : st.sleepy > 0.5 ? 0.1 : 0.32;
-      st.spin = (st.spin ?? 0) + spinRate * (st.dt ?? 0.016);
-      const yaw = st.spin + st.look[0] * 0.5, pitch = -0.42 + st.look[1] * 0.25 + (st.dizzy > 0.5 ? Math.sin(t * 9) * 0.3 : 0);
-      const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-      // Squash from the body's bounces, and a pulse out when it hears or speaks.
-      const sx = 1 + st.sq * 0.05, sy = 1 - st.sq * 0.04;
-      const shake = A === 'upset' && st.actA % 0.9 < 0.32 ? Math.sin(t * 48) * 0.6 : 0;
-      const breath = 1 + (st.sleepy > 0.5 ? 0.03 : 0.015) * Math.sin(t * 1.4);
-      const wavy = mode === 'talk' || mode === 'listen' ? v : A === 'hype' ? 0.7 : 0.12;
-      for (const p of dots) {
-        // Ripples run over the surface: the voice raises them, a sound wave bulging the points outward.
-        const band = Math.sin(p[1] * 7 - t * (mode === 'talk' ? 9 : 3)) * 0.5 + Math.sin(Math.atan2(p[2], p[0]) * 5 + t * 4) * 0.5;
-        const r = rad * breath * (1 + wavy * 0.16 * band);
-        let x = p[0] * cyw + p[2] * syw, z = -p[0] * syw + p[2] * cyw;
-        const y = p[1] * cp - z * sp; z = p[1] * sp + z * cp;
-        const px = cx + x * r * sx + shake, py = cy + y * r * sy;
-        if (z < -0.15) { if (th(Math.floor(px), Math.floor(py)) < 0.5) put(px, py, 1); continue; }
-        // Lit from the top left, brighter toward the viewer and on a ripple crest.
-        const lam = clamp(-x * 0.45 - y * 0.6 + z * 0.66, 0, 1);
-        const lv = 1 + lam * 1.6 + Math.max(0, band) * wavy * 1.4 + (z > 0.7 ? 0.4 : 0);
-        put(px, py, clamp(Math.round(lv), 1, L - 1));
+    // No time advances during drawing: sprite capture and multiple paints share exactly one pose.
+    // Motion preferences arrive from core.js's live prefers-reduced-motion media query.
+    draw(ctx, cx, cy, radius, st, cursor = false, hx = cx, hy = cy) {
+      const still = st.reduced || st.quiet, t = still ? 0 : st.t;
+      const busy = st.mode === 'talk' || st.mode === 'listen';
+      const v = still ? (busy ? 0.35 : 0.12) : this.level(st);
+      const spin = still ? 0 : (st.spin ?? 0), sleepy = st.sleepy > 0.5;
+      const accent = st.act === 'upset' ? '#f6a897' : st.act === 'remind' ? '#f4ce8a' : st.mode === 'think' ? '#9dc7ff' : '#95f5e7';
+      const breath = still ? 1 : 1 + Math.sin(t * 1.4) * 0.012;
+      const r = radius * breath * (1 + (busy ? v * 0.045 : 0));
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(r, r);
+      const alpha = ctx.globalAlpha;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(0.018, 0.9 / radius);
+      const halo = ctx.createRadialGradient(0, 0, 0.45, 0, 0, 1.5);
+      halo.addColorStop(0, 'rgba(27,151,162,0.12)');
+      halo.addColorStop(0.6, st.quiet ? 'rgba(44,191,189,0.08)' : 'rgba(44,191,189,0.2)');
+      halo.addColorStop(1, 'rgba(44,191,189,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(0, 0, 1.5, 0, TAU); ctx.fill();
+      // A dark translucent body stays legible on white windows as well as dark desktops.
+      const shell = ctx.createRadialGradient(-0.3, -0.4, 0.08, 0, 0, 1);
+      shell.addColorStop(0, 'rgba(35,100,116,0.82)');
+      shell.addColorStop(0.65, 'rgba(8,43,58,0.9)');
+      shell.addColorStop(1, 'rgba(4,24,34,0.96)');
+      ctx.fillStyle = shell;
+      ctx.beginPath(); ctx.arc(0, 0, 0.96, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#235768'; ctx.lineWidth *= 2.2; ctx.stroke();
+      ctx.lineWidth /= 2.2;
+      ctx.strokeStyle = accent; ctx.globalAlpha *= sleepy ? 0.35 : 0.7;
+      if (!cursor) {
+        // Latitudes and rotating meridians imply depth with eight paths, not hundreds of cells.
+        for (let i = -1; i <= 1; i++) {
+          const y = i * 0.4, w = Math.sqrt(0.9 * 0.9 - y * y);
+          ctx.beginPath(); ctx.ellipse(0, y, w, 0.23, -0.22, 0, TAU); ctx.stroke();
+        }
+        for (let i = 0; i < 3; i++) {
+          const width = 0.12 + Math.abs(Math.cos(spin + i * TAU / 3)) * 0.76;
+          ctx.beginPath(); ctx.ellipse(0, 0, width, 0.9, -0.22, 0, TAU); ctx.stroke();
+        }
       }
-      // The heart: a bright core that swells with the voice; it dims to a dot asleep and closes on a blink.
-      const open = st.open, sleepy = st.sleepy > 0.5;
-      const hr = Math.max(1, Math.round(rad * (sleepy ? 0.1 : 0.17 + v * 0.07) * (A === 'hype' ? 1.25 : 1)));
-      const hx = Math.round(cx + st.look[0] * rad * 0.18), hy = Math.round(cy + st.look[1] * rad * 0.14);
-      const hh = Math.max(0, Math.round(hr * (st.wide > 0.5 ? 1.25 : Math.min(1, open))));
-      for (let y = -hr - 1; y <= hr + 1; y++) for (let x = -hr - 1; x <= hr + 1; x++) {
-        const d = Math.hypot(x / (hr + 0.5), y / (hh + 0.5 || 0.5));
-        if (d > 1.35) continue;
-        put(hx + x, hy + y, d < 0.55 ? L : d < 1 ? L - 1 : 2);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = accent;
+      const ring = cursor ? 1.08 : 1.12;
+      for (let i = 0; i < 3; i++) {
+        const a = i * TAU / 3 + spin * (st.mode === 'think' ? 1.4 : 0.3);
+        ctx.beginPath(); ctx.arc(0, 0, ring, a, a + TAU / 3 - 0.28); ctx.stroke();
       }
-      if (hh === 0) for (let x = -hr; x <= hr; x++) put(hx + x, hy, L);
-      // Thinking: a short arc of light sweeping round the globe, like the HUD scanning.
-      if (mode === 'think') for (let i = 0; i < 10; i++) {
-        const a = t * 3.2 - i * 0.07;
-        put(cx + Math.cos(a) * (rad + 2), cy + Math.sin(a) * (rad + 2) * 0.96, i < 3 ? L : i < 6 ? L - 1 : 2);
+      // The core closes on a blink, and responds to actual voice energy without a strobe.
+      const open = still ? 1 : clamp(st.open, 0.08, 1);
+      const x = still ? 0 : st.look[0] * 0.12, y = still ? 0 : st.look[1] * 0.1;
+      ctx.fillStyle = sleepy ? '#448e9b' : '#d8fff7';
+      ctx.beginPath(); ctx.ellipse(x, y, 0.13 + v * 0.045, (0.13 + v * 0.045) * open, 0, 0, TAU); ctx.fill();
+      if (st.mode === 'think' || st.act) {
+        ctx.strokeStyle = accent; ctx.lineWidth *= 1.8;
+        ctx.beginPath(); ctx.arc(0, 0, 1.24, spin, spin + (st.act ? 1.7 : 0.75)); ctx.stroke();
       }
-    },
-
-    // Cursor form: a HUD reticle round the body point (cx, cy), its lit heart in the middle and a tick at the
-    // hotspot (hx, hy), where the arrow's tip would be. It holds still at rest (the native follower shows a still
-    // picture of it while it follows); it turns while it thinks or talks.
-    cursor(k, cx, cy, hx, hy, st) {
-      const { put, L } = k, t = st.t, v = this.level(st), A = st.act;
-      const busy = st.mode === 'think' || st.mode === 'talk' || st.mode === 'listen' || !!A;
-      const spin = busy ? (st.spin = (st.spin ?? 0) + (st.mode === 'think' ? 2.4 : 0.9) * (st.dt ?? 0.016)) : (st.spin ?? 0);
-      // Four ring arcs with gaps; the voice pushes them out a touch.
-      const r = 4.6 + (st.mode === 'talk' || st.mode === 'listen' ? v * 1.1 : 0) + (A === 'hype' ? 0.8 * Math.abs(Math.sin(t * 6.5)) : 0);
-      for (let i = 0; i < 64; i++) {
-        if (((i + 4) % 16) < 3) continue;
-        const a = (i / 64) * TAU + spin;
-        put(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 3);
+      ctx.restore();
+      if (cursor) {
+        ctx.save(); ctx.strokeStyle = '#c6fff3'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        const dx = cx - hx, dy = cy - hy, n = Math.hypot(dx, dy) || 1;
+        ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + dx / n * 5, hy + dy / n * 5); ctx.stroke();
+        ctx.restore();
       }
-      // Bracket ticks at the diagonals.
-      for (let q = 0; q < 4; q++) {
-        const a = q * (TAU / 4) + TAU / 8 - spin * 0.3;
-        for (let d = 6.4; d <= 7.4; d += 0.5) put(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2);
-      }
-      // The heart: a dot that closes to a line on a blink and dims asleep; a cross while it talks.
-      const sleepy = st.sleepy > 0.5;
-      if (sleepy) put(cx, cy, 2);
-      else if (st.open < 0.35) { put(cx - 1, cy, L - 1); put(cx, cy, L); put(cx + 1, cy, L - 1); }
-      else {
-        put(cx, cy, L); put(cx + 1, cy, L - 1); put(cx - 1, cy, L - 1); put(cx, cy + 1, L - 1); put(cx, cy - 1, L - 1);
-        if (st.mode === 'talk' && v > 0.55) for (const [dx, dy] of [[1, 1], [-1, -1], [1, -1], [-1, 1]]) put(cx + dx, cy + dy, 2);
-      }
-      // Dizzy: the heart wanders; happy: a little arc of light over it.
-      if (st.happy > 0.5) for (let i = -2; i <= 2; i++) put(cx + i, cy - 2 - (Math.abs(i) === 2 ? 0 : 1), 3);
-      // The hotspot: a short bright tick from the tip toward the ring, so it still reads as a pointer.
-      const dx = cx - hx, dy = cy - hy, n = Math.hypot(dx, dy) || 1;
-      for (let i = 0; i <= 2; i++) put(hx + (dx / n) * i, hy + (dy / n) * i, i === 0 ? L : L - 1);
-      // Thinking: one bright dot chasing round the ring.
-      if (st.mode === 'think') { const a = t * 5; put(cx + Math.cos(a) * r, cy + Math.sin(a) * r, L); }
     },
 
     // The blob's moments as HUD read-outs: a bracketed panel with the glyph, a pulsing ring and a short label.

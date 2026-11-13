@@ -259,6 +259,7 @@
     if (seen.look && state.look !== seen.look) { avatar.setLook(state.look); avatar.act('wave'); quip(QUIPS[state.look] ?? 'Hi!'); }
     else avatar.setLook(state.look);
     avatar.setForm(state.size);
+    avatar.setCompanionMode?.(state.companionMode);
     if (state.update.available && state.update.available !== seen.update && seen.look) { avatar.act('hype'); quip(`Roamies ${state.update.available} is here!`); }
     seen.look = state.look; seen.update = state.update.available;
   }
@@ -438,6 +439,7 @@
     return [
       group('Look', 'Each look has its own name and voice.', null, lookTiles()),
       group('Size', 'How big I am on your screen.', null, picks('Size', state.sizes, state.size, (x) => act(`size:${x}`), 'size')),
+      group('נוכחות', 'תנועה רגועה או מלווה פעיל. הגדרת הפחתת תנועה של המחשב נשמרת.', null, picks('נוכחות', [['companion','מלווה'],['quiet','שקט']], state.companionMode??'companion', (x)=>act(`companion:${x}`), 'companion')),
     ];
   }
   // The looks as live tiles: each one's character, playing, at the size picked below. Kept between renders (a state update mustn't restart
@@ -461,6 +463,7 @@
         r?.appear('crt');
       }
       t.r?.setForm(state.size);
+      t.r?.setCompanionMode?.(state.companionMode);
       const on = state.look === id;
       t.b.setAttribute('aria-checked', String(on)); t.b.tabIndex = on ? 0 : -1;
       return t.b;
