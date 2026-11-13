@@ -1304,7 +1304,7 @@ function menu() {
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
-tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] })) }));
+tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
