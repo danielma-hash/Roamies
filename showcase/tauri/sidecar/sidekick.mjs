@@ -47,6 +47,7 @@ import { WorkspaceController } from './workspace-controller.ts';
 import { AsmMemoryService } from './asm-memory.service.ts';
 import { createAsmTool } from './asm-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
+import { TaskCardsService } from './task-cards.service.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1299,7 +1300,10 @@ const claudeSessions = new ClaudeSessionsService();
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions, confirm: async (text) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] })) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory);
+const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
+const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards);
+workspace.initialize();
 function panel() {
   if (!panelOpen || panelQueued) return;
   panelQueued = true;
