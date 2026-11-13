@@ -67,6 +67,8 @@ func log(_ s: String) {
 private let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
 func wakeLog(_ s: String) { log("wake \(clock.string(from: Date())): \(s)") }
 
+let useSoniox = ProcessInfo.processInfo.environment["ROAMIES_STT"] != nil
+
 let dryRun = ProcessInfo.processInfo.environment["ROAMIES_VOICE_DRYRUN"] == "1"
 
 // --test-live <wav>: the recording stands in for the room, played in real time to whatever is listening (wake or a
@@ -488,7 +490,7 @@ final class Voice {
 
     init() {
         // Resolve the locale and fetch the model up front so the first ⌃⌥ is instant.
-        if #available(macOS 26, *), SpeechTranscriber.isAvailable { _ = AnalyzerRecognizer.prepare() }
+        if !useSoniox, #available(macOS 26, *), SpeechTranscriber.isAvailable { _ = AnalyzerRecognizer.prepare() }
     }
 
     // The talk chord: any two of ⌃ ⌥ ⌘ ⇧ (default ⌃⌥). Set with --chord or {"cmd":"chord"}.
@@ -525,7 +527,7 @@ final class Voice {
     private static let wakePause = 1.2 // words stopped this long without the phrase: start fresh for the next thing said
     private static let wakeCooldown = 2.0
 
-    var engineName: String { useAnalyzer ? "speechanalyzer" : "sfspeech" }
+    var engineName: String { useSoniox ? "soniox" : useAnalyzer ? "speechanalyzer" : "sfspeech" }
 
     // ---------- hotkey ----------
 
@@ -633,7 +635,7 @@ final class Voice {
     }
 
     private var authorized: Bool {
-        LiveTest.url != nil || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized && (useAnalyzer || SFSpeechRecognizer.authorizationStatus() == .authorized)
+        LiveTest.url != nil || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized && (useSoniox || useAnalyzer || SFSpeechRecognizer.authorizationStatus() == .authorized)
     }
 
     private func showListening(_ mode: String, _ now: Double) {
@@ -667,7 +669,7 @@ final class Voice {
             guard let self, self.phase == .finishing, self.rec === r else { return }
             self.stopAudio()
             r.end()
-            let t = Timer(timeInterval: 2.5, repeats: false) { [weak self] _ in self?.endedVia = "cap"; self?.finalize() }
+            let t = Timer(timeInterval: useSoniox ? 10 : 2.5, repeats: false) { [weak self] _ in self?.endedVia = "cap"; self?.finalize() }
             RunLoop.main.add(t, forMode: .common)
             self.finishTimer = t
         }
@@ -741,6 +743,7 @@ final class Voice {
     // ---------- wake word ----------
 
     func setWake(_ on: Bool) {
+        if useSoniox { return } // Cloud transcription only while explicitly talking.
         guard on != wakeOn else { return }
         wakeOn = on
         log("wake word \(on ? "on" : "off")")
@@ -811,9 +814,9 @@ final class Voice {
     private func ensureAuthorized(_ then: @escaping () -> Void) {
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
         let speech = SFSpeechRecognizer.authorizationStatus()
-        if mic == .authorized && (useAnalyzer || speech == .authorized) { then(); return }
+        if mic == .authorized && (useSoniox || useAnalyzer || speech == .authorized) { then(); return }
         if mic == .denied || mic == .restricted { return denied("microphone") }
-        if speech == .denied || speech == .restricted { return denied("speech") }
+        if !useSoniox && !useAnalyzer && (speech == .denied || speech == .restricted) { return denied("speech") }
         if authorizing { return }
         authorizing = true
         AVCaptureDevice.requestAccess(for: .audio) { micOK in
@@ -821,7 +824,7 @@ final class Voice {
                 DispatchQueue.main.async { self.authorizing = false; self.denied("microphone") }
                 return
             }
-            if self.useAnalyzer { DispatchQueue.main.async { self.authorizing = false; then() }; return }
+            if useSoniox || self.useAnalyzer { DispatchQueue.main.async { self.authorizing = false; then() }; return }
             SFSpeechRecognizer.requestAuthorization { status in
                 DispatchQueue.main.async {
                     self.authorizing = false
@@ -848,7 +851,8 @@ final class Voice {
             },
             onError: { [weak self] err in guard let self, self.rec === mine else { return }; self.onError(err) }
         )
-        if #available(macOS 26, *), useAnalyzer { mine = AnalyzerRecognizer(cb) } else { mine = LegacyRecognizer(cb, onDeviceOnly: phase == .wake) }
+        if useSoniox { mine = SonioxRecognizer(cb) }
+        else if #available(macOS 26, *), useAnalyzer { mine = AnalyzerRecognizer(cb) } else { mine = LegacyRecognizer(cb, onDeviceOnly: phase == .wake) }
         return mine
     }
 
@@ -969,7 +973,7 @@ func permStatus() -> [String: Any] {
         "type": "perms",
         "mic": av(AVCaptureDevice.authorizationStatus(for: .audio)),
         // SpeechAnalyzer (macOS 26+) needs no speech-recognition permission.
-        "speech": analyzer ? "granted" : sp(SFSpeechRecognizer.authorizationStatus()),
+        "speech": useSoniox || analyzer ? "granted" : sp(SFSpeechRecognizer.authorizationStatus()),
         "speechNeeded": !analyzer,
         "screen": CGPreflightScreenCaptureAccess() ? "granted" : "unknown",
     ]
@@ -1103,7 +1107,8 @@ if let i = args.firstIndex(of: "--wake-file"), i + 1 < args.count {
         onError: { e in log("recognition: \(e.localizedDescription)"); report() }
     )
     var r: Recognizer?
-    if #available(macOS 26, *), SpeechTranscriber.isAvailable { r = AnalyzerRecognizer(cb) } else { r = LegacyRecognizer(cb) }
+    if useSoniox { r = SonioxRecognizer(cb) }
+    else if #available(macOS 26, *), SpeechTranscriber.isAvailable { r = AnalyzerRecognizer(cb) } else { r = LegacyRecognizer(cb) }
     guard let r else { emit(["type": "wake_file", "error": "speech recognition unavailable"]); exit(2) }
     let gain = AutoGain()
     while let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1024), (try? file.read(into: buf)) != nil, buf.frameLength > 0 {

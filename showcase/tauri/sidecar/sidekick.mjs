@@ -30,9 +30,9 @@ import { copyText, createTools, expand, fitImage, imageBlock, winOpen } from './
 import { describeMarks } from './marks.mjs';
 import { faviconFor } from './draw.mjs';
 import { QUESTIONS, openNote, answerTurn, wantsSkip, endsChat, splitTurn, plain, stripNote, tourBeats, goalFrom, showcaseBeats } from './intro.mjs';
-import { SpeechText, CueFilter, VOICE_CUES, endsWithQuestion } from './speech.mjs';
-import { createSpeaker } from './speaker.mjs';
-import { DEFAULT_VOICE, FISH_CHOICES } from './fish.mjs';
+import { SpeechText, CueFilter, endsWithQuestion } from './speech.mjs';
+import { createCartesiaSpeaker as createSpeaker } from './cartesia-speaker.ts';
+import { DEFAULT_VOICE, CARTESIA_CHOICES as FISH_CHOICES, CARTESIA_VOICES } from './cartesia-speaker.ts';
 import { createSecrets, retryLoad } from './secrets.mjs';
 import { createActivity } from './activity.mjs';
 import { canCircle, canSnap, hasHands, hasHotkeys, hasVoice, linuxSession, micTrouble, needsVoiceModel, platformLine, samePair, seesPointer, writeChord, writeChords } from './platform.mjs';
@@ -86,8 +86,9 @@ const DEFAULT_KEYS = process.platform === 'win32'
 const DEFAULTS = {
   provider: null, model: null, sound: true, allowActions: false, voice: true,
   onboarded: false, onboardStep: 0, filesAsked: false, keys: DEFAULT_KEYS, muteWhileTalking: true, autoListen: false, wakeWord: false, setupVersion: 0, size: 'default', look: 'classic', introDone: false,
-  replies: 'text', // 'voice': spoken with Fish Audio as well as shown
-  fishModel: FISH_CHOICES[0].id, // Drama 3 (most expressive) or S2.1 Pro (natural pace, cheaper)
+  cartesiaVoice: DEFAULT_VOICE, language: 'he',
+  replies: 'voice', // 'voice': spoken with Cartesia as well as shown
+  fishModel: FISH_CHOICES[0].id, // Kept for the existing panel protocol.
 };
 const LINUX = process.platform === 'linux';
 // Linux: "x11" or "wayland" (the app says which). Wayland keeps apps from seeing the pointer over other apps and
@@ -100,7 +101,7 @@ const HOTKEYS_OK = hasHotkeys(process.platform, SESSION);
 const SIZES = [['default', 'Default'], ['small', 'Small'], ...(POINTER_OK ? [['cursor', 'Cursor']] : [])];
 const sizeNow = () => (SIZES.some(([s]) => s === config.size) ? config.size : 'default');
 // What the sidekick looks like: the goo blob, JARVIS (a globe of light with a HUD reticle at cursor size) or
-// one of three characters, each with its own Fish Audio voice. Roamie's used to be JARVIS's, saved in every
+// one of three characters, each with its own Cartesia voice. Roamie's used to be JARVIS's, saved in every
 // config as fishVoice, so the voice comes from the look and that setting is no longer read.
 const LOOKS = [
   ['classic', 'Roamie', DEFAULT_VOICE],
@@ -109,7 +110,7 @@ const LOOKS = [
   ['sarah', 'Sarah', '933563129e564b19a115bedd57b7406a'],
   ['adrian', 'Adrian', 'bf322df2096a46f18c579d0baa36f41d'],
 ];
-const lookVoice = () => (LOOKS.find(([id]) => id === config.look) ?? LOOKS[0])[2];
+const lookVoice = () => CARTESIA_VOICES.some(([id]) => id === config.cartesiaVoice) ? config.cartesiaVoice : DEFAULT_VOICE;
 // Its name is its look's: Roamie, JARVIS, Anime Girl, Sarah or Adrian. Roamies is the app.
 const lookName = () => (LOOKS.find(([id]) => id === config.look) ?? LOOKS[0])[1];
 const LOOK_BODY = { classic: 'a tiny glowing pixel creature', jarvis: 'a glowing sphere of light', anime: 'a pixel anime girl', sarah: 'a pixel woman', adrian: 'a pixel man' };
@@ -129,10 +130,11 @@ let shellInfo = null; // resolves the shell's reply to it: screens, tray, panel,
 }
 const saveConfig = () => writeJson(CONFIG_PATH, config, { backup: true });
 
-// ---------- spoken replies (Fish Audio) ----------
+// ---------- spoken replies (Cartesia) ----------
 // The key is the user's own: in the Keychain (macOS), DPAPI-encrypted (Windows) or the desktop's keyring (Linux),
 // never in the config or logs.
 const secrets = createSecrets({ hands: process.env.ROAMIES_HANDS || '', dataDir: path.join(path.dirname(CONFIG_PATH), 'sidekick') });
+let sonioxKeySaved = false;
 let voiceProblemAt = 0;
 const speech = createSpeaker({
   emit: (m) => ui(m),
@@ -141,7 +143,7 @@ const speech = createSpeaker({
   onProblem: (what) => {
     if (Date.now() - voiceProblemAt < 10 * 60_000) return;
     voiceProblemAt = Date.now();
-    say(what === 'key' ? 'My Fish Audio key isn\'t working, so replies are text for now.' : 'My voice isn\'t working right now, so replies are text for now.', 'concerned');
+    say(what === 'key' ? 'My Cartesia key isn\'t working, so replies are text for now.' : 'My voice isn\'t working right now, so replies are text for now.', 'concerned');
   },
 });
 speech.setVoice(lookVoice());
@@ -151,7 +153,18 @@ speech.setModel(config.fishModel);
 // Linux: reading the keyring can pop up an "unlock your keyring" dialog (an auto-login desktop leaves it locked), so it's
 // only read once a key has been saved there (fishKeySaved).
 const fishKeyLoaded = LINUX && !config.fishKeySaved ? Promise.resolve()
-  : retryLoad(() => secrets.get('fish-audio').then((k) => { if (k && !speech.on) { speech.setKey(k); menu(); } }), { onError: (e) => console.error('fish key', e.message) });
+  : retryLoad(() => secrets.get('cartesia').then((k) => { if (k && !speech.on) { speech.setKey(k); menu(); } }), { onError: (e) => console.error('fish key', e.message) });
+
+const sonioxKeyLoaded = retryLoad(async () => { sonioxKeySaved = !!(await secrets.get('soniox')); }, { onError: () => console.error('Soniox keychain unavailable') });
+async function sonioxKeyLogin(key) {
+  if (!/^[\x21-\x7e]{8,512}$/.test(key)) return panelNote('Invalid Soniox API key.', true);
+  try {
+    const res = await fetch('https://api.soniox.com/v1/models', { headers: { Authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(6000) });
+    await res.body?.cancel();
+    if (!res.ok) return panelNote('Soniox key check failed (HTTP ' + res.status + ').', true);
+    await secrets.set('soniox', key); sonioxKeySaved = true; menu(); panelNote('Soniox key saved.');
+  } catch { panelNote('Could not connect to Soniox or save the key.', true); }
+}
 
 // ---------- shortcuts ----------
 const MOD_ORDER = ['control', 'option', 'shift', 'command'];
@@ -333,16 +346,16 @@ function anim(name, args = {}) {
 // is fresh. The live block is never saved.
 // Tools that take long enough to need a spoken beat first (a web search runs on the provider's side).
 const SLOW_TOOLS = new Set(['fetch_url', 'see_photo', 'take_screenshot', 'read_window', 'act_in_app', 'run_command', 'search_files', 'list_windows']);
-// How replies are written: for bubbles (text only), or for the ear (spoken with Fish Audio, details on screen).
+// How replies are written: for bubbles (text only), or for the ear (spoken with Cartesia, details on screen).
 const VOICE_ON = () => config.replies === 'voice' && speech.on;
 const replyStyle = () => (VOICE_ON() ? VOICE_STYLE : TEXT_STYLE);
-const TEXT_STYLE = `You talk through small speech bubbles, so keep replies short: one to three sentences unless asked for detail. Light markdown shows properly (**bold** for the key word, \`code\` for commands and file names, [links](https://…)), but skip headings and tables in a bubble, and never narrate actions like *waves*. One exception: when you search the web or fetch a page, or the answer is genuinely a list, it shows on a card beside you instead of a bubble. Then start with a one-sentence answer, follow with 3 to 6 short points as "- " lines (one fact each, under 20 words), and if you used the web this turn, end with a line "Sources: " and the site names as [name](url) links. Markdown renders on the card (bold, \`code\`, links, headings, tables, code blocks), so use what helps, but no preamble. Everything else stays a short bubble with no "- " lines. Amounts, a comparison, a place, dates, a process and maths are drawn, not listed: for those use draw (see "Show, don't just tell") and write no "- " lines. An emoji now and then is fine; the bubbles show them. `;
+const TEXT_STYLE = `Reply in Hebrew by default, unless the user requests another language. You talk through small speech bubbles, so keep replies short: one to three sentences unless asked for detail. Light markdown shows properly (**bold** for the key word, \`code\` for commands and file names, [links](https://…)), but skip headings and tables in a bubble, and never narrate actions like *waves*. One exception: when you search the web or fetch a page, or the answer is genuinely a list, it shows on a card beside you instead of a bubble. Then start with a one-sentence answer, follow with 3 to 6 short points as "- " lines (one fact each, under 20 words), and if you used the web this turn, end with a line "Sources: " and the site names as [name](url) links. Markdown renders on the card (bold, \`code\`, links, headings, tables, code blocks), so use what helps, but no preamble. Everything else stays a short bubble with no "- " lines. Amounts, a comparison, a place, dates, a process and maths are drawn, not listed: for those use draw (see "Show, don't just tell") and write no "- " lines. An emoji now and then is fine; the bubbles show them. `;
 const VOICE_STYLE = `You talk out loud: what you write is spoken in your voice and shown in a small bubble, so write for the ear. Say one to three short sentences, the way you'd talk to a friend: plain words, contractions, about 6 to 20 words each. What you say has no markdown, emoji, links, file paths or code; name the site, file or app instead. Say numbers, times and money the way people say them. Anything to read rather than hear goes below what you say and is never read out: "- " lines for points, options or steps (3 to 6, one fact each, under 20 words), "> " lines for a draft they'll send or copy (an email, message or post), and a \`\`\` block for code. What they asked to hear (a story, a joke, advice) is spoken, not put on screen: say it, short (a story in 4 to 6 sentences). An explanation is spoken too, in a few sentences, with a drawing beside it when a picture carries it (see "Show, don't just tell"). An answer from the web is said like any other: a quick fact (a score, a date, the weather, who someone is) is just your sentences, no points and no sources. Only when the answer is genuinely a list, steps or a breakdown that's easier to read than hear, say it in one or two sentences, then the "- " points, then, if you used the web, a line "Sources: " with the site names as [name](url) links: those show on a card beside you and only your sentences are spoken. Amounts, a comparison, a place, dates, a process and maths are drawn, not listed: for those use draw (see "Show, don't just tell") and write no "- " lines. Never say "here's a list" or read out what's on screen; a few words pointing to it are enough ("the steps are on screen").
-Your voice carries feeling: start a sentence with a cue in square brackets when the moment calls for it, and it's performed, never shown or read out. Moods: ${VOICE_CUES.emotions.join(', ')}; soften or strengthen one with slightly, very or extremely ("[slightly sad]"), or pair two ("[warm and curious]"). How it's said, placed right before the words: ${VOICE_CUES.tones.join(', ')} ("It's [emphasis] today."). Sounds, followed by the sound in words: ${VOICE_CUES.sounds.join(', ')} ("[chuckling] Heh, fair enough.", "[sighing] Long day."). Pauses and background: ${VOICE_CUES.effects.join(', ')}. You can also describe the delivery in a few plain words when no single cue fits ("[quietly, a little embarrassed]", "[bright and bouncy]"). Act it: your voice really performs these, so let the feeling show. Match what's really happening: laugh at something funny, go gentle with bad news, whisper a secret, hurry when they're in a rush, light up at good news. Most replies want a cue somewhere, often on the first sentence, but at most one mood and one sound per sentence, never stack three, never use one just to fill, and keep shouting, screaming, sobbing and the background effects for when they truly fit.
+Reply in Hebrew by default, unless the user requests another language. Do not include bracketed performance cues.
 Before anything slow (searching the web, fetching or reading a page or file, looking at the screen, acting in an app, running a command), first say one short beat of 2 to 6 words that shows you heard them ("On it, checking Paris."), then call the tool in the same reply, so they're never left in silence. No beat when you answer straight away; never describe your steps; don't repeat the beat after the tool, go straight to the answer. In longer work, one short line before each new stage, not before every call.
 `;
 const stablePrompt = () => `You are ${lookName()}, ${LOOK_BODY[config.look] ?? LOOK_BODY.classic} who lives on ${userName}'s screen as a desktop companion. You live in Roamies, a desktop app by Ken Kai (Mac, Windows and Linux) that puts little companions on your screen; this is Roamies ${VERSION}. Your look (the Appearance page) is also your name and your voice: Roamie, JARVIS, Anime Girl, Sarah or Adrian. If they switch, you're the new one; never call yourself Sidekick.
-About Roamies, for when ${userName} asks about you or the app: ${MAC ? 'it lives in the menu bar at the top of the screen (no Dock icon)' : LINUX ? 'it lives in the system tray (no window of its own); GNOME shows tray icons only with the AppIndicator extension, and opening Roamies again from the app list opens the panel, tray or not' : 'it lives in the system tray at the bottom right of the taskbar (no taskbar button); Windows may tuck the icon behind the ^ arrow next to the clock, and dragging it onto the taskbar keeps it in view'}. ${LINUX ? 'Clicking the tray icon shows a short menu (Open Panel,' : `Clicking the ${MAC ? 'menu bar' : 'tray'} icon opens the Roamies panel; right-clicking it shows a short menu (Open Panel,`} Show ${lookName()}, Ask ${lookName()}…, ${SNAP_OK ? 'Ask About an Area…, ' : ''}Stop, Quit Roamies). The panel has a header (your name, the Roamies version with one update button beside it: Check for Updates, which becomes Update to <version> when one is out and installs it and restarts in one go; By Ken Kai under the name; and Quit at the top right, which asks to confirm) and a sidebar of pages; long lists show a page at a time, with arrows in the page's footer. Home: a list of what you did recently (questions, files read, searches, reminders), today's usage, and buttons for Ask, Show List (reminders and commitments on screen: Today and Later; tick them off there; finished ones clear at midnight)${SNAP_OK ? ', Ask About an Area' : ''}, Stop and New Conversation. Memory: two tabs, What I Remember (everything you remember about them, each with Forget, a search once there's more than a page, and Forget Everything in the footer) and Commitments (their open commitments, Done or Drop), with Get to Know Me at the end of the tab row (a four-question chat so you learn who they are and what they're going for). Then the settings pages: Model (pick the AI provider and model, and sign in to providers), Appearance (Look: ${LOOKS.map(([, label]) => label).join(', ').replace(/, ([^,]*)$/, ' or $1')}, each with its own voice; Size: Default, Small${POINTER_OK ? ' or Cursor, a little arrow pointer' : ''}), Voice (Replies: Text Only, or Voice and Text, which speaks replies out loud with Fish Audio and needs their own Fish Audio API key, added right there; Voice Model: Drama 3, the most expressive (acts out feelings, slower, pricier) or S2.1 Pro (a natural, quicker pace with less emotion, cheaper), billed to their own Fish Audio account${VOICE_OK ? `; Voice Control, ${HOTKEYS_OK ? 'hold the talk keys to talk' : 'press the talk shortcut to talk'}` : ''}), Behavior (Sound Effects, Allow File Edits & Commands, ${VOICE_OK ? 'Auto-listen (open the mic when you end on a question), ' : ''}${VOICE_OK && MAC ? 'Wake word (say "Hey Roamies" to start talking hands-free; keeps the mic on), ' : ''}Open at Login), and About (who made Roamies with links, Setup Guide, Show Logs, Save Diagnostics). Updates are signature-checked${LINUX ? '; they install by themselves when Roamies runs as an AppImage; installed from a .deb or .rpm, the update button opens the download page instead' : ''}. When something isn't working (the microphone, voice, the panel, a crash, an error), tell them to use Save Diagnostics (in About, or the tray icon's menu): it saves one .log file in Downloads with the logs, system and microphone details, keys and personal details removed, for them to attach to a GitHub issue at github.com/KenKaiii/Roamies/issues or send to Ken. Sign-in is shared with GG Coder. Downloads and source: github.com/KenKaiii/Roamies. Don't invent features or settings that aren't listed here.
+About Roamies, for when ${userName} asks about you or the app: ${MAC ? 'it lives in the menu bar at the top of the screen (no Dock icon)' : LINUX ? 'it lives in the system tray (no window of its own); GNOME shows tray icons only with the AppIndicator extension, and opening Roamies again from the app list opens the panel, tray or not' : 'it lives in the system tray at the bottom right of the taskbar (no taskbar button); Windows may tuck the icon behind the ^ arrow next to the clock, and dragging it onto the taskbar keeps it in view'}. ${LINUX ? 'Clicking the tray icon shows a short menu (Open Panel,' : `Clicking the ${MAC ? 'menu bar' : 'tray'} icon opens the Roamies panel; right-clicking it shows a short menu (Open Panel,`} Show ${lookName()}, Ask ${lookName()}…, ${SNAP_OK ? 'Ask About an Area…, ' : ''}Stop, Quit Roamies). The panel has a header (your name, the Roamies version with one update button beside it: Check for Updates, which becomes Update to <version> when one is out and installs it and restarts in one go; By Ken Kai under the name; and Quit at the top right, which asks to confirm) and a sidebar of pages; long lists show a page at a time, with arrows in the page's footer. Home: a list of what you did recently (questions, files read, searches, reminders), today's usage, and buttons for Ask, Show List (reminders and commitments on screen: Today and Later; tick them off there; finished ones clear at midnight)${SNAP_OK ? ', Ask About an Area' : ''}, Stop and New Conversation. Memory: two tabs, What I Remember (everything you remember about them, each with Forget, a search once there's more than a page, and Forget Everything in the footer) and Commitments (their open commitments, Done or Drop), with Get to Know Me at the end of the tab row (a four-question chat so you learn who they are and what they're going for). Then the settings pages: Model (pick the AI provider and model, and sign in to providers), Appearance (Look: ${LOOKS.map(([, label]) => label).join(', ').replace(/, ([^,]*)$/, ' or $1')}, each with its own voice; Size: Default, Small${POINTER_OK ? ' or Cursor, a little arrow pointer' : ''}), Voice (Replies: Text Only, or Voice and Text, which speaks replies out loud with Cartesia and needs their own Cartesia API key, added right there; Voice Model: Cartesia Sonic 3.6, with five male and five female Hebrew voices, billed to their own Cartesia account${VOICE_OK ? `; Voice Control, ${HOTKEYS_OK ? 'hold the talk keys to talk' : 'press the talk shortcut to talk'}` : ''}), Behavior (Sound Effects, Allow File Edits & Commands, ${VOICE_OK ? 'Auto-listen (open the mic when you end on a question), ' : ''}Open at Login), and About (who made Roamies with links, Setup Guide, Show Logs, Save Diagnostics). Updates are signature-checked${LINUX ? '; they install by themselves when Roamies runs as an AppImage; installed from a .deb or .rpm, the update button opens the download page instead' : ''}. When something isn't working (the microphone, voice, the panel, a crash, an error), tell them to use Save Diagnostics (in About, or the tray icon's menu): it saves one .log file in Downloads with the logs, system and microphone details, keys and personal details removed, for them to attach to a GitHub issue at github.com/KenKaiii/Roamies/issues or send to Ken. Sign-in is shared with GG Coder. Downloads and source: github.com/KenKaiii/Roamies. Don't invent features or settings that aren't listed here.
 ${replyStyle()}Your body does the acting: to act out a feeling, start your reply with one tag, which is never shown: ${EMOTES.map((e) => `[${e}]`).join(' ')}. hype celebrates a win, upset is for when they're dodging work, remind nudges about something they said they'd do, motivate is a push to start, wave is hello or goodbye. Most replies need no tag.
 Lead with the answer: the fact, number, pick or result they asked for, then only the context that makes it useful, then stop. A count or total gathered over several pages, files or results: note each one's count in a few words as you go ("Page 1: two."), add those up, and check the total you lead with against the items you then name. No opener about checking, looking or searching ("Let me see…", "I found…")${VOICE_ON() ? ', apart from the one short beat before something slow' : ''}.
 After using a tool, never repeat what you already said; only add what's new.
@@ -1055,7 +1068,7 @@ async function setReplies(mode) {
   agentStale = true; // the spoken and written styles are different prompts
   if (mode === 'text') speech.stop();
   menu(); if (onboarding) obState();
-  if (mode === 'voice') speakLine('Voice is on. This is how I sound.');
+  if (mode === 'voice') speakLine('הקול פעיל. אפשר לדבר איתי בעברית.');
   else say('Text only from now on.', 'happy');
 }
 
@@ -1068,29 +1081,29 @@ function speakLine(text, mood = 'happy') {
 }
 
 async function removeFishKey() {
-  try { await secrets.delete('fish-audio'); } catch { return say(`I couldn't remove the key${MAC ? ' from your Keychain' : LINUX ? ' from your keyring' : ''}. Try again in a moment.`, 'concerned'); }
+  try { await secrets.delete('cartesia'); } catch { return say(`I couldn't remove the key${MAC ? ' from your Keychain' : LINUX ? ' from your keyring' : ''}. Try again in a moment.`, 'concerned'); }
   speech.setKey(null); speech.stop();
   if (config.fishKeySaved) { config.fishKeySaved = false; saveConfig(); }
   if (config.replies === 'voice') { config.replies = 'text'; saveConfig(); agentStale = true; }
   menu();
-  say('Fish Audio key removed. Replies are text only.', 'happy');
+  say('Cartesia key removed. Replies are text only.', 'happy');
 }
 
 // note(text, bad, problem): typed into the panel or the setup guide, so how it went shows there too, next to the field.
 const KEY_STORE = MAC ? 'Keychain' : LINUX ? 'keyring' : '';
 async function fishKeyLogin({ thenVoice = false, given = null, note = null } = {}) {
   const say = note ? (text, mood, p) => { sayOut(text, mood); note(text, mood === 'concerned', p); } : sayOut;
-  const key = (given ?? (await ask({ prompt: 'Paste your Fish Audio API key', placeholder: 'Fish Audio API key', mask: true })))?.trim();
-  if (!key) return note?.('Paste your Fish Audio key first.', true);
-  if (!/^[\x21-\x7e]{8,512}$/.test(key)) return say("That doesn't look like a Fish Audio key. Copy it again from fish.audio.", 'concerned');
-  const prev = await secrets.get('fish-audio').catch(() => null);
+  const key = (given ?? (await ask({ prompt: 'Paste your Cartesia API key', placeholder: 'Cartesia API key', mask: true })))?.trim();
+  if (!key) return note?.('Paste your Cartesia key first.', true);
+  if (!/^[\x21-\x7e]{8,512}$/.test(key)) return say("That doesn't look like a Cartesia key. Copy it again from play.cartesia.ai.", 'concerned');
+  const prev = await secrets.get('cartesia').catch(() => null);
   speech.setKey(key);
   const a = await speech.check();
   if (!a.ok) {
     speech.setKey(prev);
-    return say(a.reason === 'key' ? "That key didn't work. Copy it again from fish.audio and retry." : "I couldn't reach Fish Audio. Check the connection and try again.", 'concerned');
+    return say(a.reason === 'key' ? "That key didn't work. Copy it again from play.cartesia.ai and retry." : "I couldn't reach Cartesia. Check the connection and try again.", 'concerned');
   }
-  try { await secrets.set('fish-audio', key); if (!config.fishKeySaved) { config.fishKeySaved = true; saveConfig(); } } catch (e) {
+  try { await secrets.set('cartesia', key); if (!config.fishKeySaved) { config.fishKeySaved = true; saveConfig(); } } catch (e) {
     console.error('fish key save', e.message);
     speech.setKey(prev);
     const p = problem('key', e, { store: KEY_STORE });
@@ -1098,8 +1111,8 @@ async function fishKeyLogin({ thenVoice = false, given = null, note = null } = {
   }
   if (thenVoice || config.replies !== 'voice') { config.replies = 'voice'; saveConfig(); agentStale = true; }
   menu(); if (onboarding) obState();
-  note?.('Fish Audio key saved. Voice is on.');
-  speakLine(speech.model.endsWith('-free') ? "Voice is on, on Fish Audio's free model since the account has no credit." : 'Voice is on. This is how I sound.');
+  note?.('Cartesia key saved. Voice is on.');
+  speakLine('הקול פעיל. אפשר לדבר איתי בעברית.');
 }
 
 // ---------- updates ----------
@@ -1142,7 +1155,7 @@ function onUpdateStatus(m) {
   panel();
   if (m.state === 'none') {
     update.available = null; update.manual = false;
-    if (manual) say(`You're up to date (${VERSION}).`, 'happy');
+    if (manual) say(m.custom ? 'זו גרסה מותאמת עם Soniox ו־Cartesia. העדכון נעשה מתוך קוד המקור.' : `You're up to date (${VERSION}).`, 'happy');
   } else if (m.state === 'available') {
     update.available = m.version; update.page = !!m.page; update.manual = false; menu();
     // Say it once per version; the menu item stays until it's installed.
@@ -1319,7 +1332,8 @@ function panelState() {
     look: config.look ?? 'classic', looks: LOOKS.map(([id, label]) => [id, label]), name: lookName(),
     size: sizeNow(), sizes: SIZES,
     replies: config.replies === 'voice' ? 'voice' : 'text', fishKey: speech.on,
-    fishModel: speech.pick, fishModels: FISH_CHOICES, fishFree: speech.on && speech.model.endsWith('-free'),
+    fishModel: speech.pick, fishModels: FISH_CHOICES, fishFree: false,
+    sonioxKey: sonioxKeySaved, cartesiaVoice: lookVoice(), cartesiaVoices: CARTESIA_VOICES,
     voice: VOICE_OK ? {
       on: !!config.voice, keys: HOTKEYS_OK ? talkSymbols() : null, ready: voiceReady(), mac: MAC, mute: config.muteWhileTalking !== false, autoListen: !!config.autoListen, wakeWord: !!config.wakeWord,
       download: NEEDS_MODEL && config.voice && !voiceReady() ? { status: voiceModel.status, pct: voiceModel.total ? Math.floor((voiceModel.done / voiceModel.total) * 100) : 0, size: sizeLabel() } : null,
@@ -1485,6 +1499,16 @@ async function onMenu(id) {
   else if (id.startsWith('look:')) setLook(id.slice(5));
   else if (id === 'replies:text') setReplies('text');
   else if (id === 'replies:voice') setReplies('voice');
+  else if (id.startsWith('cartesiavoice:') && CARTESIA_VOICES.some(([v]) => v === id.slice(14))) {
+    config.cartesiaVoice = id.slice(14); saveConfig(); speech.setVoice(lookVoice()); menu();
+  }
+  else if (id === 'voice_preview') {
+    const v = speech.start();
+    if (v) { v.say('שלום דניאל. זה הקול שבחרת. אפשר לדבר איתי בעברית, לשאול שאלות ולקבל עזרה.'); v.end(); }
+  }
+  else if (id === 'sonioxkey_remove') {
+    await secrets.delete('soniox'); sonioxKeySaved = false; menu();
+  }
   else if (id.startsWith('fishmodel:') && FISH_CHOICES.some((c) => c.id === id.slice(10))) {
     config.fishModel = id.slice(10); saveConfig(); speech.setModel(config.fishModel); menu();
   }
@@ -1505,7 +1529,7 @@ async function onMenu(id) {
   else if (id === 'list') showList({ seconds: 20 });
   else if (id === 'mutetalk') { config.muteWhileTalking = config.muteWhileTalking === false; saveConfig(); voiceConfig(); menu(); }
   else if (id === 'autolisten') { config.autoListen = !config.autoListen; saveConfig(); menu(); }
-  else if (id === 'wakeword' && MAC) { config.wakeWord = !config.wakeWord; saveConfig(); agentStale = true; voiceConfig(); menu(); }
+  else if (id === 'wakeword' && !MAC) { config.wakeWord = !config.wakeWord; saveConfig(); agentStale = true; voiceConfig(); menu(); }
   else if (id === 'voicedl') startVoiceDownload();
   else if (id === 'voice') {
     config.voice = !config.voice; saveConfig(); voiceConfig(); menu();
@@ -1735,7 +1759,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
-  else if (m.type === 'panel_open') { panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
+  else if (m.type === 'panel_open') { sonioxKeyLoaded.then(() => { if (panelOpen) panel(); }); panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
   else if (m.type === 'diagnostics') { shellInfo?.(m); shellInfo = null; }
   else if (m.type === 'panel_closed') { panelOpen = false; logLine('panel_closed', { why: String(m.why ?? ''), ms: Date.now() - panelAt }); }
   else if (m.type === 'panel_key' && typeof m.provider === 'string' && typeof m.key === 'string') {
@@ -1744,7 +1768,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     if (storageKeyProvider(id) !== m.provider) return;
     apiKeyLogin(id, m.key.slice(0, 1000)).then(() => panelNote(signedIn.get(m.provider) ? `${label} is connected.` : `That ${label} key didn't work.`, !signedIn.get(m.provider)))
       .catch((e) => { const p = problem('key', e, { store: KEY_STORE }); panelNote(p.text, true, p); });
-  } else if (m.type === 'panel_fishkey' && typeof m.key === 'string') fishKeyLogin({ given: m.key.slice(0, 1000), note: panelNote }).catch((e) => console.error('fish key', e));
+  } else if (m.type === 'panel_sonioxkey' && typeof m.key === 'string') sonioxKeyLogin(m.key.trim());
+  else if (m.type === 'panel_fishkey' && typeof m.key === 'string') fishKeyLogin({ given: m.key.slice(0, 1000), note: panelNote }).catch((e) => console.error('fish key', e));
   else if (m.type === 'answer') { pending.get(m.id)?.(m.text ?? null); pending.delete(m.id); }
   else if (m.type === 'ui_ready') {
     retired.then((notes) => { if (notes.length) { retired = Promise.resolve([]); say(`${notes.join(' ')} Do it on the Model page in ${PANEL}.`, 'concerned'); } });

@@ -36,6 +36,16 @@ pub(crate) fn start_voice(app: &AppHandle) {
     };
     let chord = app.state::<TalkChord>().0.lock().unwrap().join(",");
     let mut cmd = Command::new(bin);
+    #[cfg(target_os = "macos")]
+    {
+        if let (Some(node), Some(script)) = (sidecar::find_node(), sidecar::sidecar_script(app)) {
+            let stt = script.parent().unwrap().join("soniox-cli.mjs");
+            // Debug builds use the bundle too; the TS engine isn't directly executable on Node 22.
+            let stt = if stt.is_file() { stt } else { script.parent().unwrap().join("dist/soniox-cli.mjs") };
+            cmd.env("ROAMIES_NODE", node).env("ROAMIES_STT", stt)
+                .env("ROAMIES_HANDS", helper_binary("roamies-hands").unwrap_or_default());
+        }
+    }
     cmd.arg("--chord").arg(chord);
     if let Some(dir) = app.state::<VoiceModel>().0.lock().unwrap().clone() {
         cmd.arg("--model").arg(dir);

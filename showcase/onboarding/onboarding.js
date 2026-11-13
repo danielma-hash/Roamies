@@ -485,11 +485,11 @@
   });
 
   // ---------------------------------------------------------------- step 3: how replies come
-  // Text only, or Voice + text (spoken with Fish Audio). Voice needs the user's own Fish Audio key: picking it
+  // Text only, or Voice + text (spoken with Cartesia). Voice needs the user's own Cartesia key: picking it
   // opens the field, and the key is checked before voice turns on.
-  // Ken's Fish Audio affiliate link (sign-up lands on their site; keys are under Developers). It's disclosed in
-  // the UI: the #fish-link button in index.html reads "Get a free key (affiliate link)".
-  const FISH_URL = 'https://fish.audio/?fpr=o3gtlu';
+  // Ken's Cartesia affiliate link (sign-up lands on their site; keys are under Developers). It's disclosed in
+  // the UI: the #fish-link button in index.html reads "Get a Cartesia key".
+  const FISH_URL = 'https://play.cartesia.ai/keys';
   const replies = {
     pick: null, saving: false, changing: false, // changing: replacing a key that's already saved
     mode: () => replies.pick ?? (state?.replies === 'voice' ? 'voice' : 'text'),
@@ -498,7 +498,7 @@
       const mode = replies.mode(), on = state?.replies === 'voice' && state?.fishKey;
       const CARDS = [
         ['text', 'Text only', 'Answers in my bubbles'],
-        ['voice', 'Voice + text', on ? 'Voice is on' : mode === 'voice' ? 'Needs a Fish Audio key' : 'Said out loud too'],
+        ['voice', 'Voice + text', on ? 'Voice is on' : mode === 'voice' ? 'Needs a Cartesia key' : 'Said out loud too'],
       ];
       $('replies').replaceChildren(...CARDS.map(([id, name, sub]) => {
         const checked = mode === id;
@@ -513,7 +513,7 @@
       $('fish-form').hidden = mode !== 'voice' || (saved && !replies.changing);
       $('fish-change').hidden = !saved || mode !== 'voice';
       $('fish-change').textContent = replies.changing ? 'Keep my current key' : 'Change key';
-      $('fish-label').textContent = replies.changing ? 'New Fish Audio API key' : 'Fish Audio API key';
+      $('fish-label').textContent = replies.changing ? 'New Cartesia API key' : 'Cartesia API key';
       $('fish-change').setAttribute('aria-expanded', String(replies.changing));
       $('fish-save').disabled = replies.saving;
       $('fish-save').textContent = replies.saving ? 'Checking…' : 'Save';
@@ -532,7 +532,7 @@
         send({ type: 'ob_replies', mode: id });
       }
       replies.render();
-      if (id === 'voice' && !state?.fishKey) { $('fish-input').focus(); quip('Got a Fish Audio key?', 3); }
+      if (id === 'voice' && !state?.fishKey) { $('fish-input').focus(); quip('Got a Cartesia key?', 3); }
     },
     onFish(msg) {
       replies.saving = false;
@@ -1313,7 +1313,7 @@
       else if (m.type === 'ob_fishkey') {
         // A key of "bad" is refused, like a wrong one.
         setTimeout(() => {
-          if (m.key === 'bad') return window.__onboard?.({ kind: 'fish', ok: false, error: "That key didn't work. Copy it again from fish.audio and retry." });
+          if (m.key === 'bad') return window.__onboard?.({ kind: 'fish', ok: false, error: "That key didn't work. Copy it again from play.cartesia.ai and retry." });
           Object.assign(st, { fishKey: true, replies: 'voice' }); window.__onboard?.({ kind: 'fish', ok: true }); window.__onboard?.({ ...st });
         }, 900);
       } else if (m.type === 'set_keys') {

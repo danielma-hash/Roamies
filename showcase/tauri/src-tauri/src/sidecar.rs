@@ -3,7 +3,7 @@
 use super::*;
 use std::io::{BufRead, BufReader};
 
-fn find_node() -> Option<PathBuf> {
+pub(crate) fn find_node() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("ROAMIES_NODE") {
         return Some(PathBuf::from(p));
     }
@@ -20,7 +20,7 @@ fn find_node() -> Option<PathBuf> {
     dirs.into_iter().map(|d| d.join(exe)).find(|p| p.is_file())
 }
 
-fn sidecar_script(app: &AppHandle) -> Option<PathBuf> {
+pub(crate) fn sidecar_script(app: &AppHandle) -> Option<PathBuf> {
     let bundled = app.path().resource_dir().map(|d| d.join("sidecar").join("sidekick.mjs"));
     match bundled {
         Ok(p) if p.is_file() => Some(p),
