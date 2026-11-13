@@ -158,7 +158,7 @@ final class AnalyzerRecognizer: Recognizer {
                 let analyzer = SpeechAnalyzer(modules: [tr])
                 // Lean toward the app's names, as contextualStrings does for the older recogniser ("Hey Roamies").
                 let context = AnalysisContext()
-                context.contextualStrings[.general] = ["Roamies", "Roamie", "JARVIS"]
+                context.contextualStrings[.general] = ["Roamies", "Roamie", "Jarvis", "ג׳ארוויס", "היי ג׳ארוויס"]
                 try? await analyzer.setContext(context)
                 var converter: AVAudioConverter?
                 let inputs = AsyncStream<AnalyzerInput> { out in
@@ -239,14 +239,17 @@ final class LegacyRecognizer: Recognizer {
     private var task: SFSpeechRecognitionTask?
 
     /// onDeviceOnly: nil rather than sending audio to Apple's servers (wake listening, which hears everything).
-    init?(_ cb: RecognizerCallbacks, onDeviceOnly: Bool = false) {
-        guard let rec = SFSpeechRecognizer() ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US")), rec.isAvailable else { return nil }
+    init?(_ cb: RecognizerCallbacks, onDeviceOnly: Bool = false, locale: Locale? = nil) {
+        let recognizer: SFSpeechRecognizer?
+        if let locale { recognizer = SFSpeechRecognizer(locale: locale) }
+        else { recognizer = SFSpeechRecognizer() ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US")) }
+        guard let rec = recognizer, rec.isAvailable else { return nil }
         if onDeviceOnly && !rec.supportsOnDeviceRecognition { return nil }
         req.shouldReportPartialResults = true
         if rec.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
         if #available(macOS 13, *) { req.addsPunctuation = true }
         req.taskHint = .dictation
-        req.contextualStrings = ["Roamies", "Roamie", "JARVIS"]
+        req.contextualStrings = ["Roamies", "Roamie", "Jarvis", "ג׳ארוויס", "היי ג׳ארוויס"]
         task = rec.recognitionTask(with: req) { result, error in
             DispatchQueue.main.async {
                 if let result {
@@ -260,6 +263,17 @@ final class LegacyRecognizer: Recognizer {
     func append(_ buffer: AVAudioPCMBuffer) { req.append(buffer) }
     func end() { req.endAudio() }
     func cancel() { task?.cancel(); task = nil }
+}
+
+// Soniox is configured for the Hebrew app. SpeechAnalyzer has no Hebrew model, so its English
+// fallback cannot reliably hear "היי ג׳ארוויס". Never substitute cloud recognition for local wake.
+func localWakeRecognizer(_ cb: RecognizerCallbacks) -> Recognizer? {
+    if useSoniox {
+        guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return nil }
+        return LegacyRecognizer(cb, onDeviceOnly: true, locale: Locale(identifier: "he-IL"))
+    }
+    if #available(macOS 26, *), SpeechTranscriber.isAvailable { return AnalyzerRecognizer(cb) }
+    return LegacyRecognizer(cb, onDeviceOnly: true)
 }
 
 // Mutes the default output while you talk so music or videos don't drown you out (or end up in the
@@ -312,8 +326,35 @@ enum OutputMute {
 final class Feed {
     private let lock = NSLock()
     private var target: Recognizer?
-    func set(_ r: Recognizer?) { lock.lock(); target = r; lock.unlock() }
-    func append(_ buffer: AVAudioPCMBuffer) { lock.lock(); let t = target; lock.unlock(); t?.append(buffer) }
+    private var remember = false, recent: [AVAudioPCMBuffer] = []
+    private var seconds = 0.0
+    func set(_ r: Recognizer?, remember: Bool = false) {
+        lock.lock(); defer { lock.unlock() }
+        target = r; self.remember = remember; recent = []; seconds = 0
+    }
+    // No cloud recognizer exists until wake detection. Replay only this bounded, in-memory tail so the
+    // command spoken immediately after the phrase survives the local-to-Soniox handoff.
+    func handoff(_ r: Recognizer) {
+        lock.lock(); defer { lock.unlock() }
+        for buffer in recent { r.append(buffer) }
+        target = r; remember = false; recent = []; seconds = 0
+    }
+    func append(_ buffer: AVAudioPCMBuffer) {
+        lock.lock(); defer { lock.unlock() }
+        if remember, let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) {
+            copy.frameLength = buffer.frameLength
+            let from = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+            let to = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            for i in 0 ..< from.count {
+                if let src = from[i].mData, let dst = to[i].mData { memcpy(dst, src, Int(from[i].mDataByteSize)) }
+            }
+            recent.append(copy); seconds += Double(copy.frameLength) / copy.format.sampleRate
+            while seconds > 4, !recent.isEmpty {
+                let old = recent.removeFirst(); seconds -= Double(old.frameLength) / old.format.sampleRate
+            }
+        }
+        target?.append(buffer)
+    }
 }
 
 // Wake listening keeps the mic open. On a Bluetooth headset that drops it (AirPods too) to call-quality sound for as
@@ -387,11 +428,13 @@ final class AutoGain {
     }
 }
 
-// The wake phrase, "Hey Roamies": a greeting, then the name, at the start of something said (the text's start or
+// The wake phrase, "Hey Jarvis" / "היי ג׳ארוויס" / "Hey Roamies": a greeting and name at the start of something said (the text's start or
 // after a sentence end). Near-misses the recogniser really writes count too ("Romies", "Roamie's", "Roomies").
 enum WakeWord {
-    static let greetings: Set<String> = ["hey", "hi", "hay", "heya", "hiya"]
+    static let greetings: Set<String> = ["hey", "hi", "hay", "heya", "hiya", "היי", "הי"]
     static let names = ["roamies", "roamie"]
+    static let jarvisNames: Set<String> = ["jarvis", "גארוויס", "גארויס", "גרוויס", "גרויס"]
+    static let apostrophes: Set<Character> = ["'", "\u{2019}", "\u{2018}", "\u{05F3}"]
 
     /// What was said after the phrase ("" if nothing yet), or nil when the phrase isn't there.
     static func match(_ text: String) -> String? { scan(text).rest }
@@ -411,9 +454,11 @@ enum WakeWord {
             // Split in two ("Roam ies"): joined, it must be a closer match.
             if i + 2 < words.count { candidates.append((words[i + 1].word + words[i + 2].word, words[i + 2].range.upperBound, 1)) }
             for (name, end, allowed) in candidates {
-                let d = distance(name)
+                // Jarvis aliases are whole tokens only: never wake for "Jarvison" or "ג׳ארוויסון".
+                let isJarvis = end == words[i + 1].range.upperBound && jarvisNames.contains(name)
+                let d = isJarvis ? 0 : distance(name)
                 closest = min(closest ?? d, d)
-                if d <= allowed && name.hasPrefix("r") && name.contains("m") && name.count >= 5 {
+                if isJarvis || (d <= allowed && name.hasPrefix("r") && name.contains("m") && name.count >= 5) {
                     guard atStart else { late = true; continue }
                     let rest = text[end...].drop(while: { !$0.isLetter && !$0.isNumber })
                     return (String(rest).trimmingCharacters(in: .whitespacesAndNewlines), d, nil)
@@ -433,10 +478,10 @@ enum WakeWord {
         var i = text.startIndex
         while true {
             let c: Character? = i == text.endIndex ? nil : text[i]
-            let inWord = c.map { $0.isLetter || $0.isNumber || (($0 == "'" || $0 == "\u{2019}") && start != nil) } ?? false
+            let inWord = c.map { $0.isLetter || $0.isNumber || (apostrophes.contains($0) && start != nil) } ?? false
             if inWord { if start == nil { start = i } }
             else if let s = start {
-                let w = text[s ..< i].lowercased().filter { $0 != "'" && $0 != "\u{2019}" }
+                let w = text[s ..< i].lowercased().filter { !apostrophes.contains($0) }
                 if !w.isEmpty { out.append((w, s ..< i)) }
                 start = nil
             }
@@ -486,6 +531,7 @@ final class Voice {
     private var wakeLoud = 0.0, wakeLevelAt = 0.0 // seconds loud enough to be speech in this wake window
     private var wakeCooldownUntil = 0.0, wakeRetryAt = 0.0, wakeAt = 0.0
     private var wakeText = "", woke = false, wakeMiss: String?
+    private var wakeUnavailableReported = false, wakeReadyReported = false
     private var useAnalyzer: Bool { if #available(macOS 26, *) { return SpeechTranscriber.isAvailable } else { return false } }
 
     init() {
@@ -743,16 +789,41 @@ final class Voice {
     // ---------- wake word ----------
 
     func setWake(_ on: Bool) {
-        if useSoniox { return } // Cloud transcription only while explicitly talking.
         guard on != wakeOn else { return }
         wakeOn = on
+        wakeUnavailableReported = false
+        wakeReadyReported = false
         log("wake word \(on ? "on" : "off")")
         if !on { stopWake() }
+        // Enabling local wake is an explicit opt-in. The ordinary system prompt owns authorization;
+        // Soniox's mic-only permission is not sufficient for the Hebrew SFSpeech recognizer.
+        if on && (useSoniox || !useAnalyzer) && SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            wakeUnavailable("speech_permission_pending")
+            SFSpeechRecognizer.requestAuthorization { [weak self] status in
+                DispatchQueue.main.async {
+                    guard let self, self.wakeOn else { return }
+                    self.wakeUnavailableReported = false
+                    if status != .authorized { self.wakeUnavailable("speech_permission") }
+                }
+            }
+        }
+    }
+
+    private func wakeUnavailable(_ reason: String) {
+        wakeReadyReported = false
+        guard !wakeUnavailableReported else { return }
+        wakeUnavailableReported = true
+        emit(["type": "error", "code": "wake_unavailable", "reason": reason])
     }
 
     // Never asks for permission: wake listening starts only once talking has been allowed.
     private func wakeAllowed(_ now: Double) -> Bool {
-        wakeOn && !wakeHold && !dryRun && now >= wakeCooldownUntil && now >= wakeRetryAt && authorized
+        guard wakeOn && !wakeHold && !dryRun && now >= wakeCooldownUntil && now >= wakeRetryAt && authorized else { return false }
+        // Soniox needs only mic access, but Hebrew local wake detection still requires Speech permission.
+        guard (!useSoniox && useAnalyzer) || SFSpeechRecognizer.authorizationStatus() == .authorized else {
+            wakeUnavailable("speech_permission"); return false
+        }
+        return true
     }
 
     private func startWake(_ now: Double) {
@@ -762,7 +833,13 @@ final class Voice {
         wakeAt = now; heardAt = now; voiceAt = now
         let device = InputDevice.forWake()
         startAudio(device: device)
-        if phase == .wake { wakeLog("listening\(device == nil ? "" : " on the built-in mic (the default input is Bluetooth)")") }
+        if phase == .wake {
+            wakeLog("listening\(device == nil ? "" : " on the built-in mic (the default input is Bluetooth)")")
+            if !wakeReadyReported {
+                wakeReadyReported = true; wakeUnavailableReported = false
+                emit(["type": "state", "state": "wake_ready"])
+            }
+        }
     }
 
     private func stopWake() {
@@ -780,7 +857,7 @@ final class Voice {
         feed.set(nil)
         rec?.cancel(); rec = nil
         guard let r = makeRecognizer() else { stopWake(); wakeRetryAt = now + 30; return }
-        rec = r; feed.set(r)
+        rec = r; feed.set(r, remember: useSoniox)
         wakeAt = now; heardAt = now; wakeText = ""
     }
 
@@ -801,11 +878,19 @@ final class Voice {
         guard let rest else { if let miss { wakeMiss = miss }; return }
         wakeLog("heard the phrase (distance \(d ?? 0))")
         wakeMiss = nil
-        // Same mic, same recogniser: what follows the phrase is already the start of the take.
+        // Native-only mode keeps its recognizer. Soniox starts only after the local phrase was heard.
         woke = true
         phase = .handsFree
         chordAt = now
         best = rest
+        if useSoniox {
+            let previous = rec
+            guard let r = makeRecognizer() else { cancel(); return }
+            rec = r
+            best = ""
+            feed.handoff(r)
+            previous?.cancel()
+        }
         showListening("wake", now)
     }
 
@@ -851,7 +936,8 @@ final class Voice {
             },
             onError: { [weak self] err in guard let self, self.rec === mine else { return }; self.onError(err) }
         )
-        if useSoniox { mine = SonioxRecognizer(cb) }
+        if phase == .wake { mine = localWakeRecognizer(cb) }
+        else if useSoniox { mine = SonioxRecognizer(cb) }
         else if #available(macOS 26, *), useAnalyzer { mine = AnalyzerRecognizer(cb) } else { mine = LegacyRecognizer(cb, onDeviceOnly: phase == .wake) }
         return mine
     }
@@ -861,7 +947,7 @@ final class Voice {
         failed = false
         // Wake listening fails quietly and tries again later; a take tells the user.
         let fail = { (code: String) in
-            if self.phase == .wake { self.phase = .idle; self.wakeRetryAt = uptime() + 30; wakeLog("couldn't start (\(code))") } else { emit(["type": "error", "code": code]); self.cancel() }
+            if self.phase == .wake { self.phase = .idle; self.wakeRetryAt = uptime() + 30; self.wakeUnavailable(code); wakeLog("couldn't start (\(code))") } else { emit(["type": "error", "code": code]); self.cancel() }
         }
         guard let r = makeRecognizer() else { return fail("unavailable") }
         let gain = autoGain, feed = feed
@@ -877,7 +963,7 @@ final class Voice {
             let level = min(1, max(0, (Double(20 * log10(max(rms, 1e-7))) + 55) / 40))
             DispatchQueue.main.async { self?.onLevel(level) }
         }
-        if LiveTest.url != nil { feed.set(r); rec = r; LiveTest.sink = ingest; return }
+        if LiveTest.url != nil { feed.set(r, remember: phase == .wake && useSoniox); rec = r; LiveTest.sink = ingest; return }
 
         let eng = AVAudioEngine()
         let input = eng.inputNode
@@ -887,7 +973,7 @@ final class Voice {
             r.cancel()
             return fail("no_input")
         }
-        feed.set(r)
+        feed.set(r, remember: phase == .wake && useSoniox)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in ingest(buffer) }
         do {
             eng.prepare()
@@ -932,7 +1018,12 @@ final class Voice {
     private func onText(_ raw: String) {
         if phase == .wake { return heardWhileWaiting(raw) }
         // A take started by the wake phrase: the phrase itself isn't part of what was said.
-        let text = woke ? (WakeWord.match(raw) ?? raw) : raw
+        let text: String
+        if woke && useSoniox {
+            // Replayed room speech and revised hypotheses without the phrase are never a request.
+            guard let request = WakeWord.match(raw) else { return }
+            text = request
+        } else { text = woke ? (WakeWord.match(raw) ?? raw) : raw }
         guard text != best else { return }
         best = text
         heardAt = uptime()
@@ -946,7 +1037,7 @@ final class Voice {
         let benign = ns.domain == "kAFAssistantErrorDomain" && [203, 216, 301, 1110].contains(ns.code)
         // Wake listening never bothers the user: start fresh, or rest a while after a real failure.
         if phase == .wake {
-            if benign { recycleWake(uptime()) } else { wakeLog("recognition: \(msg)"); stopWake(); wakeRetryAt = uptime() + 30 }
+            if benign { recycleWake(uptime()) } else { wakeUnavailable("recognition"); wakeLog("recognition: \(msg)"); stopWake(); wakeRetryAt = uptime() + 30 }
             return
         }
         log("recognition: \(msg)")
@@ -1044,6 +1135,61 @@ if args.contains("--test-wake") {
     check("Hey", nil)
     check("Hey. Roamies", nil)
     check("", nil)
+    check("Hey Jarvis", "")
+    check("HEY JARVIS, open Safari.", "open Safari.")
+    check("Hi Jarvis מה השעה?", "מה השעה?")
+    check("היי ג׳ארוויס", "")
+    check("היי ג'ארוויס, פתח את ספארי", "פתח את ספארי")
+    check("היי ג’ארוויס מה השעה?", "מה השעה?")
+    check("היי ג‘ארוויס", "")
+    check("הי ג׳רוויס", "")
+    check("היי גארויס", "")
+    check("היי Jarvis, שלום", "שלום")
+    check("Hey ג׳ארוויס", "")
+    check("היי, ג׳ארוויס! פתח את הדואר", "פתח את הדואר")
+    check("נגמר. היי ג׳ארוויס, שלום", "שלום")
+    check("Hey Jarvison", nil)
+    check("Hey Superjarvis", nil)
+    check("Hey Jarvis123", nil)
+    check("Hey Jarvisים", nil)
+    check("היי ג׳ארוויסון", nil)
+    check("היי לג׳ארוויס", nil)
+    check("היי. ג׳ארוויס", nil)
+    check("הייתי ג׳ארוויס", nil)
+    check("ג׳ארוויס פתח דואר", nil)
+    check("I told him hey Jarvis", nil)
+    check("אמרתי לו עכשיו היי ג׳ארוויס", nil)
+    exit(bad == 0 ? 0 : 1)
+}
+// --test-wake-feed checks audio ownership and ordering across a local-to-cloud wake handoff.
+if args.contains("--test-wake-feed") {
+    final class RecordingRecognizer: Recognizer {
+        var heard: [Float] = []
+        func append(_ buffer: AVAudioPCMBuffer) { heard.append(buffer.floatChannelData![0][0]) }
+        func end() {}
+        func cancel() {}
+    }
+    var bad = 0
+    func check(_ name: String, _ ok: Bool) { print("\(ok ? "ok" : "FAIL") \(name)"); if !ok { bad += 1 } }
+    let local = RecordingRecognizer(), cloud = RecordingRecognizer(), next = RecordingRecognizer()
+    let feed = Feed()
+    let fmt = AVAudioFormat(standardFormatWithSampleRate: 1000, channels: 1)!
+    let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1000)!
+    buf.frameLength = 1000
+    feed.set(local, remember: true)
+    for n in 0 ..< 6 { buf.floatChannelData![0][0] = Float(n); feed.append(buf) }
+    check("only local recognizer hears audio before wake", local.heard == [0, 1, 2, 3, 4, 5] && cloud.heard.isEmpty)
+    buf.floatChannelData![0][0] = 99
+    feed.handoff(cloud)
+    check("handoff replays independent copies bounded to four seconds", cloud.heard == [2, 3, 4, 5])
+    buf.floatChannelData![0][0] = 6; feed.append(buf)
+    check("new audio follows replay once and stops reaching local recognizer", cloud.heard == [2, 3, 4, 5, 6] && local.heard.count == 6)
+    feed.handoff(next)
+    check("handoff consumes and clears the replay", next.heard.isEmpty)
+    feed.set(local, remember: true); feed.append(buf); feed.set(nil); feed.handoff(next)
+    check("stop clears retained audio", next.heard.isEmpty)
+    feed.set(local); feed.append(buf); feed.handoff(next)
+    check("ordinary explicit takes retain no wake replay", next.heard.isEmpty)
     exit(bad == 0 ? 0 : 1)
 }
 // --test-snap checks which drawn paths count as a circled area; exits 1 on a failure.
@@ -1107,8 +1253,8 @@ if let i = args.firstIndex(of: "--wake-file"), i + 1 < args.count {
         onError: { e in log("recognition: \(e.localizedDescription)"); report() }
     )
     var r: Recognizer?
-    if useSoniox { r = SonioxRecognizer(cb) }
-    else if #available(macOS 26, *), SpeechTranscriber.isAvailable { r = AnalyzerRecognizer(cb) } else { r = LegacyRecognizer(cb) }
+    // Exercise the same local-only wake recognizer even when Soniox is configured for actual requests.
+    r = localWakeRecognizer(cb)
     guard let r else { emit(["type": "wake_file", "error": "speech recognition unavailable"]); exit(2) }
     let gain = AutoGain()
     while let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1024), (try? file.read(into: buf)) != nil, buf.frameLength > 0 {
