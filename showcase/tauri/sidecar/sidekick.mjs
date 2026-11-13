@@ -254,12 +254,13 @@ function ensureModel() {
 const credsFor = (provider = config.provider, model = config.model) => auth.resolveCredentials(provider, { storageKeys: getAuthStorageKeys(provider, model) });
 
 const userName = 'דניאל';
+let recipeReadOnly = false;
 
 // ---------- tools ----------
 // The open request's voice, if replies are spoken: draw's beat lines are said on it, in order with the reply.
 let turnVoice = null;
 const { tools, hands, whereNow, ink, nextTurn } = createTools({
-  allowActions: () => config.allowActions, ui, ask, openUrl, userName,
+  allowActions: () => config.allowActions && !recipeReadOnly, ui, ask, openUrl, userName,
   speak: (line) => { if (!turnVoice) return false; turnVoice.say(line); return true; },
   onHandoff: (task) => { activity.handoff(task); panel(); },
   commitmentsText: () => [commitmentsText(), doneTodayText() && `Done today:\n${doneTodayText()}`].filter(Boolean).join('\n'),
@@ -529,10 +530,10 @@ let credsBaseUrl;
 
 // One run at a time: a new request waits for (or interrupts) the current one. Folding waits until none is left.
 let queued = 0;
-function enqueue(text, { interrupt = false, image = null, note = '', byVoice = false } = {}) {
+function enqueue(text, { interrupt = false, image = null, note = '', byVoice = false, readOnly = false } = {}) {
   if (interrupt && busy) interruptQuietly();
   queued++;
-  running = running.then(() => prompt(text, image, note, byVoice)).catch((e) => console.error('prompt', e))
+  running = running.then(async () => { recipeReadOnly=readOnly;try{await prompt(text,image,note,byVoice);}finally{recipeReadOnly=false;} }).catch((e) => console.error('prompt', e))
     .finally(() => { if (--queued === 0) maybeCompact(); });
   return running;
 }
@@ -1299,7 +1300,7 @@ function menu() {
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
-tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions, confirm: async (text) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] })) }));
+tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] })) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
@@ -1307,7 +1308,7 @@ const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task
 const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
 speech.setPronunciationDictionary((text) => pronunciation.apply(text));
 let reviewedArea = null;
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}});
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}}, (text)=>enqueue(text,{readOnly:true}));
 workspace.initialize().then(() => workspace.poll());
 setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
