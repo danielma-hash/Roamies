@@ -327,13 +327,16 @@ export async function updateCommitment(id, { status, dueMs }) {
 
 const FACT_CAP = 150;
 export const listFacts = () => loadMemory().facts.slice();
+// Niqqud/cantillation are optional; keep Hebrew punctuation as word separators.
+const normalizedFactText = (t) => String(t).normalize('NFC').toLowerCase().replace(/[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/g, '');
+const factKey = (t) => normalizedFactText(t).replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').trim();
 
 /** Saves a fact; a near-duplicate of an existing one replaces it instead of piling up. */
 export async function addFact(text) {
   const t = String(text).trim().replace(/\s+/g, ' ').slice(0, 240);
-  const key = t.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+  const key = factKey(t);
   const facts = loadMemory().facts;
-  const same = facts.find((f) => f.text.toLowerCase().replace(/[^a-z0-9 ]/g, '') === key);
+  const same = facts.find((f) => factKey(f.text) === key);
   if (same) { same.updatedAt = Date.now(); await saveMemory(); return same; }
   const f = { id: newId('f'), text: t, createdAt: Date.now() };
   facts.push(f);
@@ -345,7 +348,7 @@ export async function addFact(text) {
 // Picks which facts go into the prompt: the newest few always, then the ones that share words with
 // what's being talked about, then the most recently used. Keeps the prompt small as memory grows.
 const STOP = new Set('the a an and or but to of in on at for with is are was were be it this that my me i you your his her its our their what how when where why can do does just like about from have has had will would should could not no yes so if then than'.split(' '));
-const words = (t) => new Set(String(t).toLowerCase().match(/[a-z0-9]{3,}/g)?.filter((w) => !STOP.has(w)) ?? []);
+const words = (t) => new Set(normalizedFactText(t).match(/[\p{L}\p{N}\p{M}]{3,}/gu)?.filter((w) => !STOP.has(w)) ?? []);
 export function pickFacts(context = '', limit = 40) {
   const facts = loadMemory().facts;
   if (facts.length <= limit) return facts.slice();
