@@ -44,6 +44,8 @@ import { fileURLToPath } from 'node:url';
 import { ClaudeSessionsService } from './claude-sessions.service.ts';
 import { ClaudeHooksService } from './claude-hooks.service.ts';
 import { WorkspaceController } from './workspace-controller.ts';
+import { AsmMemoryService } from './asm-memory.service.ts';
+import { createAsmTool } from './asm-tool.ts';
 
 console.log = console.info = (...a) => console.error(...a);
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
@@ -1293,7 +1295,9 @@ function menu() {
 let panelOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }));
+const asmMemory = new AsmMemoryService();
+tools.push(createAsmTool(asmMemory));
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory);
 function panel() {
   if (!panelOpen || panelQueued) return;
   panelQueued = true;

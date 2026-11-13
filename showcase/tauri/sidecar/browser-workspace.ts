@@ -1,4 +1,6 @@
 import type { ClaudeSession, ClaudeTranscript } from './claude-sessions.types.js';
+import { renderKnowledgeWorkspace } from './browser-knowledge-workspace.js';
+import type { AsmMemoryCitation } from './asm-memory.types.js';
 
 export interface WorkspaceState {
   readonly sessions: readonly ClaudeSession[];
@@ -9,9 +11,11 @@ export interface WorkspaceState {
   readonly busy?: boolean;
   readonly error?: string;
   readonly observing?: boolean;
+  readonly citations?: readonly AsmMemoryCitation[];
 }
 
 export type WorkspaceAction =
+  | { readonly type: 'workspace'; readonly action: 'memory.search'; readonly query: string; readonly scope: 'company'|'personal' }
   | { readonly type: 'workspace'; readonly action: 'sessions.list'; readonly query: string }
   | { readonly type: 'workspace'; readonly action: 'sessions.observe' }
   | { readonly type: 'workspace'; readonly action: 'sessions.read' | 'sessions.handoff' | 'sessions.fork'; readonly id: string };
@@ -134,6 +138,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
       element('p', 'workspace-note', 'אפשר לבחור ולהעתיק את הטקסט לשיחה שבה תרצה להמשיך.'));
     root.append(handoff);
   }
+  root.append(renderKnowledgeWorkspace(state, (message) => send(message as WorkspaceAction)));
   return root;
 }
 

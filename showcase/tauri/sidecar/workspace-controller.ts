@@ -1,19 +1,22 @@
 import { z } from 'zod';
 import { ClaudeSessionsService } from './claude-sessions.service.js';
 import { ClaudeHooksService } from './claude-hooks.service.js';
+import { AsmMemoryService } from './asm-memory.service.js';
+import type { AsmMemoryCitation } from './asm-memory.types.js';
 import type { ClaudeSessionList, ClaudeTranscript } from './claude-sessions.types.js';
 
-const request = z.object({ action: z.enum(['sessions.list', 'sessions.read', 'sessions.handoff', 'sessions.fork', 'sessions.observe']), query: z.string().max(200).optional(), id: z.string().max(100).optional() });
+const request = z.object({ action: z.enum(['sessions.list', 'sessions.read', 'sessions.handoff', 'sessions.fork', 'sessions.observe', 'memory.search']), query: z.string().max(200).optional(), id: z.string().max(100).optional(), scope: z.enum(['company','personal']).optional() });
 export interface WorkspaceState extends ClaudeSessionList {
   readonly selected?: ClaudeTranscript;
   readonly handoff?: string;
   readonly busy?: boolean;
   readonly error?: string;
   readonly observing?: boolean;
+  readonly citations?: readonly AsmMemoryCitation[];
 }
 export class WorkspaceController {
   private current: WorkspaceState = { available: true, sessions: [] };
-  constructor(private readonly sessions: ClaudeSessionsService, private readonly changed: () => void, private readonly hooks?: ClaudeHooksService) {}
+  constructor(private readonly sessions: ClaudeSessionsService, private readonly changed: () => void, private readonly hooks?: ClaudeHooksService, private readonly memory?: AsmMemoryService) {}
   snapshot(): WorkspaceState { return this.current; }
   async handle(value: unknown): Promise<void> {
     if (this.current.busy) return;
@@ -22,6 +25,7 @@ export class WorkspaceController {
     const input = parsed.data;
     this.current = { ...this.current, busy: true, error: undefined }; this.changed();
     try {
+      if (input.action === 'memory.search' && input.scope && this.memory) { this.current = { ...this.current, citations: await this.memory.search(input.query ?? '', { scope: input.scope }) }; return; }
       if (input.action === 'sessions.list') this.current = { ...this.current, ...await this.sessions.list({ query: input.query }), observing: (await this.hooks?.status())?.installed };
       else if (input.action === 'sessions.observe' && this.hooks) { await this.hooks.install(); this.current = { ...this.current, observing: true, message: 'המעקב הופעל. שיחות Claude חדשות ישלחו אירועי מצב בלבד.' }; }
       else if (input.id) {
