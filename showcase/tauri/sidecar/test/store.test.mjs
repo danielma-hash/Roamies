@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'roamies-store-test-'));
 process.env.HOME = TMP; process.env.USERPROFILE = TMP;
+process.env.ROAMIES_DATA_DIR = TMP;
 const STORE = new URL('../store.mjs', import.meta.url).href;
 process.on('exit', () => fs.rmSync(TMP, { recursive: true, force: true }));
 const S = await import(STORE);
@@ -161,8 +162,9 @@ console.log('store tests: all passed');
 {
   const S4 = await import(STORE + '?pick');
   await S4.clearFacts();
+  const video = await S4.addFact('Ken edits videos in Final Cut Pro');
+  video.createdAt = 1;
   for (let i = 0; i < 60; i++) await S4.addFact(`filler fact number ${i} about nothing much`);
-  await S4.addFact('Ken edits videos in Final Cut Pro');
   const picked = S4.pickFacts('how do I trim a clip in Final Cut', 10);
   assert.equal(picked.length, 10, 'respects the limit');
   assert.ok(picked.some((f) => f.text.includes('Final Cut')), 'relevant fact chosen');
@@ -172,6 +174,41 @@ console.log('store tests: all passed');
   const ids = S4.listFacts().map((x) => x.id);
   assert.equal(new Set(ids).size, ids.length, 'fact ids are unique');
   console.log('fact relevance tests: passed');
+}
+
+// Hebrew text survives deduplication; niqqud is optional and punctuation separates words.
+{
+  const H = await import(STORE + '?hebrew');
+  await H.clearFacts();
+  const tea = await H.addFact('דניאל אוהב תה');
+  const coffee = await H.addFact('דניאל מעדיף קפה');
+  assert.notEqual(tea.id, coffee.id, 'distinct Hebrew facts with the same word count survive');
+  assert.equal((await H.addFact('דָּנִיאֵל אוֹהֵב תֵּה!')).id, tea.id, 'niqqud and terminal punctuation do not duplicate a fact');
+  const city = await H.addFact('גר בתל־אביב');
+  assert.equal((await H.addFact('גר בתל אביב')).id, city.id, 'Hebrew punctuation preserves word boundaries');
+  assert.notEqual((await H.addFact('גר בתלאביב')).id, city.id, 'punctuation must not join words');
+  const english = await H.addFact('Uses Final-Cut');
+  assert.equal((await H.addFact('uses final cut!')).id, english.id, 'English case and punctuation normalize');
+  assert.notEqual((await H.addFact('uses finalcut')).id, english.id, 'English word boundaries remain distinct');
+  const saved = JSON.parse(fs.readFileSync(path.join(H.DIR, 'memory.json'), 'utf8'));
+  assert.ok(saved.facts.some((f) => f.id === tea.id && f.text === 'דניאל אוהב תה'), 'the original user fact stays intact');
+  assert.ok(saved.facts.some((f) => f.id === coffee.id), 'distinct Hebrew fact is persisted');
+  console.log('Hebrew fact deduplication tests: passed');
+}
+
+// Old Hebrew facts must compete on relevance, outside the default newest forty.
+{
+  const H = await import(STORE + '?hebrew-pick');
+  await H.clearFacts();
+  const old = await H.addFact('דניאל מתכנן טיול לִירוּשָׁלַיִם');
+  old.createdAt = 1;
+  for (let i = 0; i < 60; i++) await H.addFact(`filler fact ${i}`);
+  assert.ok(!H.pickFacts('').some((f) => f.id === old.id), 'old fact is outside the recency fallback');
+  const picked = H.pickFacts('טיול־לירושלים');
+  assert.equal(picked.length, 40, 'default prompt limit is preserved');
+  assert.ok(picked.some((f) => f.id === old.id), 'Hebrew query retrieves an old fact through punctuation and niqqud');
+  assert.ok(H.pickFacts('טִיּוּל').some((f) => f.id === old.id), 'niqqud in the query also normalizes');
+  console.log('Hebrew fact relevance tests: passed');
 }
 
 // Regression: older messages kept changing between requests, which broke the prompt cache every time.
