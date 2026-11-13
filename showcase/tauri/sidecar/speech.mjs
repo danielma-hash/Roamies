@@ -146,7 +146,13 @@ export class SpeechText {
       const line = nl < 0 ? this.buf : this.buf.slice(0, nl);
       SENTENCE_END.lastIndex = 0;
       let cut = -1, m;
-      while ((m = SENTENCE_END.exec(line))) { if (m.index + m[0].length < line.length || nl >= 0) { cut = m.index + m[0].length; break; } }
+      while ((m = SENTENCE_END.exec(line))) {
+        // Hesitation isn't a sentence boundary. Keep English abbreviations in
+        // context as well; a standalone "Dr." changes the spoken reading.
+        if (/^(?:\.{2,}|…)/.test(m[0])) continue;
+        if (m[0][0] === '.' && /(?:\b(?:Mr|Mrs|Ms|Dr|Prof|vs|etc)|\be\.g|\bi\.e|\bU\.S|\bU\.K)$/i.test(line.slice(0, m.index))) continue;
+        if (m.index + m[0].length < line.length || nl >= 0) { cut = m.index + m[0].length; break; }
+      }
       if (cut < 0 && nl >= 0) cut = nl;
       if (cut < 0 && line.length > LONG) { const sp = line.lastIndexOf(', ', LONG); cut = sp > 40 ? sp + 1 : line.lastIndexOf(' ', LONG); }
       if (cut <= 0) {

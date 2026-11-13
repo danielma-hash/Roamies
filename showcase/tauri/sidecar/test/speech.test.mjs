@@ -25,6 +25,9 @@ assert.deepEqual(said(['Ok.\n', '-', ' item one\n', 'Bye.']), ['Ok.', 'Bye.']);
 assert.deepEqual(said(['Ok.\n1', '0. tenth step\nBye.']), ['Ok.', 'Bye.']);
 // Decimals and versions don't end a sentence.
 assert.deepEqual(said(['Version 3.5 is out. It costs $4.99 now.']), ['Version 3.5 is out.', 'It costs $4.99 now.']);
+// Preserve pronunciation context across hesitation and English titles.
+assert.deepEqual(said(['רגע... ', 'בדקתי את גרסה 3.6. המחיר 25.50 ש״ח.']), ['רגע... בדקתי את גרסה 3.6.', 'המחיר 25.50 ש״ח.']);
+assert.deepEqual(said(['Ask Dr. ', 'Smith about Node.js 22. Then call me.']), ['Ask Dr. Smith about Node.js 22.', 'Then call me.']);
 // Run-on text is spoken in pieces instead of waiting for the end.
 const long = said([`${'word '.repeat(30)}, ${'more '.repeat(30)}`]);
 assert.ok(long.length >= 2 && long.every((s) => s.length <= 230), JSON.stringify(long));

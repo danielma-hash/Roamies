@@ -40,6 +40,21 @@ describe('Cartesia output', () => {
     await tick(); speaker.stop(); release?.(); await tick();
     expect(events.some((e) => e.id === old.id && e.pcm)).toBe(false);
   });
+  it('routes mixed language spans in order with one voice, including English-only replies', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const speaker = new CartesiaSpeaker({ emit: () => {}, fetchImpl: async (_url, options) => {
+      calls.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
+      return new Response(new Uint8Array([1, 2]));
+    } });
+    speaker.setKey('test'); speaker.setVoice(CARTESIA_VOICES[5][0]);
+    const turn = speaker.start()!;
+    turn.say('פתח Google Chrome ואז בדוק GitHub.'); turn.say('Please use ChatGPT.'); turn.end();
+    await tick();
+    expect(calls.map(({ transcript, language }) => [transcript, language])).toEqual([
+      ['פתח', 'he'], ['Google Chrome', 'en'], ['ואז בדוק', 'he'], ['GitHub.', 'en'], ['Please use ChatGPT.', 'en'],
+    ]);
+    expect(new Set(calls.map((call) => call.voice))).toEqual(new Set([CARTESIA_VOICES[5][0]]));
+  });
   it('reports HTTP failures once and does not synthesize queued sentences afterward', async () => {
     let calls = 0, errors = 0;
     const speaker = new CartesiaSpeaker({ emit: () => {}, onProblem: () => { errors++; }, fetchImpl: async () => { calls++; return new Response('', { status: 401 }); } });
