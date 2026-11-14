@@ -10,6 +10,9 @@ import { ScopedApprovalService } from './scoped-approval.service.ts';
 import { WebReaderService } from './web-reader.service.ts';
 import { DesktopDriverService } from './desktop-driver.service.ts';
 import { DesktopProcessService } from './desktop-process.service.ts';
+import { BrowserTaskService } from './browser-task.service.ts';
+import { localDockerProcess } from './docker-process.service.ts';
+import { createBrowserTools } from './browser-tools.ts';
 import { createDesktopTools } from './desktop-tools.ts';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
 import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
@@ -1332,6 +1335,13 @@ const confirmClaudeControl = (text, signal) => {
   return next;
 };
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
+const browserDocker = localDockerProcess();
+const browserTasks = browserDocker ? new BrowserTaskService({
+  docker: (args, input, signal) => browserDocker.run(args, input, signal),
+  ownerId: createHash('sha256').update(workspaceData).digest('hex').slice(0, 16),
+  hostSubnets: () => Object.values(os.networkInterfaces()).flatMap((values) => values ?? []).filter((value) => value.family === 'IPv4').map((value) => value.cidr ?? `${value.address}/32`),
+}) : undefined;
+if (browserTasks) tools.push(...createBrowserTools(browserTasks));
 const desktopProcess = process.platform === 'darwin' && process.env.ROAMIES_DESKTOP && process.env.ROAMIES_DESKTOP_HELPER
   ? new DesktopProcessService(process.env.ROAMIES_DESKTOP, process.env.ROAMIES_DESKTOP_HELPER) : undefined;
 if (desktopProcess) tools.push(...createDesktopTools(new DesktopDriverService({
@@ -1929,7 +1939,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (busy) syncSession();
   closeSpare();
   claudeRuns.close();
-  Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), desktopProcess?.close()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
+  Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });
 
 // Retired sign-ins (Claude from before Claude Code, the old ChatGPT, Kimi, Grok and Google ones) no longer work:
