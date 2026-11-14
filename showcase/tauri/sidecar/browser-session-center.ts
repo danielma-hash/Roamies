@@ -1,3 +1,4 @@
+import { PanelViewStateService } from './panel-view-state.service.js';
 import { PanelLibraryView } from './browser-panel-library.js';
 import { LivePanelView } from './browser-live-panel.js';
 import { renderClaudeControl, renderClaudeInstruction } from './browser-claude-control.js';
@@ -174,7 +175,7 @@ if (root && invoke) {
   const view = new SessionCenterView(sessions, invoke, store);
   const libraryRoot = node('div'); const displayRoot = node('div'); panels.append(libraryRoot, displayRoot);
   const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }));
-  const live = new LivePanelView(displayRoot);
+  const live = new LivePanelView(displayRoot, new PanelViewStateService({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }));
   window.__sessionCenter = (message) => {
     if (record(message) && message.kind === 'live_panel_library') library.receive(message);
     else if (record(message) && message.kind === 'live_panel') {
