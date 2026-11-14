@@ -5,8 +5,23 @@ fn main() {
     {
         build_swift_helper("voice");
         build_swift_helper("hands");
+        copy_desktop_helpers();
     }
     tauri_build::build()
+}
+
+#[cfg(target_os = "macos")]
+fn copy_desktop_helpers() {
+    use std::path::PathBuf;
+    let target = std::env::var("TARGET").expect("cargo sets TARGET");
+    let arch = if target.starts_with("aarch64") { "arm64" } else { "x64" };
+    let source = PathBuf::from("../sidecar/node_modules/agent-desktop/bin");
+    println!("cargo:rerun-if-changed={}", source.display());
+    for name in ["agent-desktop", "agent-desktop-macos-helper"] {
+        let from = source.join(format!("{name}-darwin-{arch}"));
+        let to = PathBuf::from("binaries").join(format!("{name}-{target}"));
+        std::fs::copy(&from, &to).expect("agent-desktop 1.3.1 missing; run npm ci in sidecar");
+    }
 }
 
 #[cfg(target_os = "macos")]

@@ -19,6 +19,7 @@ rm -rf dist && mkdir -p dist/node_modules/@bokuweb
   --banner:js="import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" \
   --log-level=warning
 cp -R node_modules/@bokuweb/zstd-wasm dist/node_modules/@bokuweb/
+cp -R licenses dist/licenses
 "$ES" claude-events-entry.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/claude-events.mjs --external:@anthropic-ai/claude-agent-sdk --log-level=warning
 mkdir -p ../dist/panel
 "$ES" browser-workspace.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=../dist/panel/workspace.js --log-level=warning

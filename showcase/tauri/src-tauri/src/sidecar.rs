@@ -58,6 +58,10 @@ pub(crate) fn spawn_sidecar(app: &AppHandle) {
         .stdout(Stdio::piped())
         .stderr(stderr);
     // Linux: "x11" or "wayland", for what the sidecar offers and how it words things (platform.mjs).
+    #[cfg(target_os = "macos")]
+    if let (Some(binary), Some(helper)) = (helper_binary("agent-desktop"), helper_binary("agent-desktop-macos-helper")) {
+        cmd.env("ROAMIES_DESKTOP", binary).env("ROAMIES_DESKTOP_HELPER", helper);
+    }
     #[cfg(target_os = "linux")]
     cmd.env("ROAMIES_SESSION", crate::linux::session().name()).env("ROAMIES_LAUNCH", crate::linux::launch_command());
     if let Some(dir) = script.parent() {

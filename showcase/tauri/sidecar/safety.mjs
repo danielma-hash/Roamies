@@ -10,6 +10,22 @@ const isAbs = (p) => p.startsWith('/') || /^[a-z]:\//i.test(p);
 export const SAFE = 'safe', ASK = 'ask', BLOCK = 'block';
 const verdict = (level, reason = '') => ({ level, reason });
 
+/** Alternate driver: native hands owns app/window policy, this gate owns action policy. */
+export function checkDesktopAction(action, policy, { allowActions = false, element, text } = {}) {
+  if (!policy || policy.protected !== false) return verdict(BLOCK, 'האפליקציה מוגנת מפני קריאה ופעולות אוטומטיות.');
+  if (policy.trusted !== true) return verdict(BLOCK, 'נדרשת הרשאת נגישות ל־Roamies.');
+  if (action === 'read') return verdict(SAFE);
+  if (!allowActions) return verdict(BLOCK, 'פעולות כבויות בהגדרות.');
+  if (!element || element.states?.some((s) => ['disabled', 'hidden', 'password'].includes(s)) || /password|secure/i.test(element.role)) return verdict(BLOCK, 'הרכיב אינו זמין לפעולה.');
+  if (action === 'fill') {
+    if (!['textfield', 'textbox', 'combobox'].includes(element.role) || !element.actions?.includes('SetValue')) return verdict(BLOCK, 'אפשר למלא רק שדה טקסט שנקרא ותומך בהחלפת ערך.');
+    return typeof text === 'string' && text.length <= 2000 ? verdict(SAFE) : verdict(BLOCK, 'טקסט לא תקין או ארוך מדי.');
+  }
+  const riskyHebrew = /(?:^|[^\p{L}])(?:ה|ל)?(מחיק[הת]|מחק|מחקי|הסר|הסר[הת]|שלח|שלחי|שליח[הת]|פרסם|פרסום|תשלום|שלם|רכיש[הת]|קנה|איפוס|אפס|התנתק|התנתקות|רוקן|ביטול מינוי|בטל מינוי|בצע הזמנה)(?![\p{L}])/u;
+  if (action === 'click' && element.actions?.includes('Click')) return verdict(!element.name || isRiskyClick(element.name) || riskyHebrew.test(element.name) ? ASK : SAFE);
+  return verdict(BLOCK, 'הפעולה אינה נתמכת ברכיב הזה.');
+}
+
 // Secrets: keys, tokens, passwords, browser cookies and the keychain. Never read, never sent anywhere.
 const SECRET = [
   /(^|\/)\.ssh(\/|$)/, /(^|\/)\.gnupg(\/|$)/, /(^|\/)\.aws(\/|$)/, /(^|\/)\.azure(\/|$)/, /(^|\/)\.kube\/config$/,

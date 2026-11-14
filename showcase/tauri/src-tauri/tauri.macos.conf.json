@@ -3,6 +3,8 @@
     "externalBin": [
       "binaries/roamies-voice",
       "binaries/roamies-hands",
+      "binaries/agent-desktop",
+      "binaries/agent-desktop-macos-helper",
       "binaries/node"
     ],
     "macOS": {
