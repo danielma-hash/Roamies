@@ -1406,60 +1406,9 @@ fn login_item(app: &AppHandle, set: Option<bool>) {
     to_sidecar(app, &json!({ "type": "login_item_status", "supported": supported, "on": on, "approval": approval }));
 }
 
-/// Checks the signed update feed (latest.json on the newest GitHub release). With `install`, downloads,
-/// verifies the signature, swaps the app in place and restarts. Progress goes to the sidecar as update_status.
-fn update(app: &AppHandle, install: bool) {
-    // An upstream installer would replace the custom speech engines.
-    if cfg!(target_os = "macos") {
-        to_sidecar(app, &json!({ "type": "update_status", "state": "none", "custom": true }));
-        return;
-    }
-    use tauri_plugin_updater::UpdaterExt;
-    let app = app.clone();
-    // Linux: only an AppImage can swap itself in place. A copy from a .deb or .rpm is told about the new version
-    // (page: true) and "install" opens the releases page instead.
-    #[cfg(target_os = "linux")]
-    let by_page = linux::appimage().is_none();
-    #[cfg(not(target_os = "linux"))]
-    let by_page = false;
-    tauri::async_runtime::spawn(async move {
-        let status = |state: &str, extra: Value| {
-            let mut m = json!({ "type": "update_status", "state": state });
-            if let (Some(m), Some(e)) = (m.as_object_mut(), extra.as_object()) {
-                m.extend(e.clone());
-            }
-            to_sidecar(&app, &m);
-        };
-        let found = match app.updater() {
-            Ok(u) => u.check().await,
-            Err(e) => Err(e),
-        };
-        match found {
-            Ok(None) => status("none", json!({})),
-            Ok(Some(u)) if !install => status("available", json!({ "version": u.version, "page": by_page })),
-            #[cfg(target_os = "linux")]
-            Ok(Some(u)) if by_page => {
-                linux::open_releases_page();
-                status("page", json!({ "version": u.version }));
-            }
-            Ok(Some(u)) => {
-                status("downloading", json!({ "version": u.version }));
-                match u.download_and_install(|_, _| {}, || {}).await {
-                    Ok(()) => {
-                        status("installed", json!({ "version": u.version }));
-                        tokio_sleep(Duration::from_millis(1500)).await;
-                        app.restart();
-                    }
-                    Err(e) => status("error", json!({ "error": e.to_string() })),
-                }
-            }
-            Err(e) => status("error", json!({ "error": e.to_string() })),
-        }
-    });
-}
-
-async fn tokio_sleep(d: Duration) {
-    let _ = tauri::async_runtime::spawn_blocking(move || thread::sleep(d)).await;
+/// This fork has no published, verified signed update channel yet. Never use the upstream feed.
+fn update(app: &AppHandle, _install: bool) {
+    to_sidecar(app, &json!({ "type": "update_status", "state": "disabled", "custom": true }));
 }
 
 fn handle_sidecar(app: &AppHandle, msg: Value) {
@@ -1610,7 +1559,6 @@ fn main() {
             let app2 = app.clone();
             let _ = app.run_on_main_thread(move || second_launch(&app2, &args));
         }))
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Sidecar(Mutex::new(None)))
         .manage(Roster(Mutex::new(vec!["sidekick".into()])))
         .manage(Voice(Mutex::new(None), AtomicUsize::new(0)))

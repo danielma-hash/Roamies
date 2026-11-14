@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   feed:
+    # Disabled until the fork has a reviewed signing identity, manifest and update policy.
+    if: ${{ vars.ROAMIES_SIGNED_RELEASES == 'enabled' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

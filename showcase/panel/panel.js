@@ -138,7 +138,8 @@
     const u = state.update, b = $('head-update'), v = u.available;
     const fresh = u.result?.ok && Date.now() - (u.result.at ?? 0) < FRESH;
     const [label, aria, kind, off] =
-      u.done ? ['Done', `Roamies ${u.done} is installed. Restarting`, 'ghost', true]
+      u.disabled ? ['עדכון ידני', 'ערוץ עדכון חתום לגרסה המותאמת עדיין לא הוגדר; לא בוצעה בדיקת גרסה', 'ghost', true]
+      : u.done ? ['Done', `Roamies ${u.done} is installed. Restarting`, 'ghost', true]
       : u.installing ? ['Updating…', `Installing Roamies ${v}`, 'ghost', true]
       : v ? (u.page ? [`Get ${v}`, `Open the download page for Roamies ${v}`, 'primary', false] : [`Update to ${v}`, `Install Roamies ${v} and restart`, 'primary', false])
       : u.checking ? ['Checking…', 'Checking for updates', 'ghost', true]
@@ -148,9 +149,9 @@
     b.hidden = false; b.textContent = label; b.disabled = off;
     b.className = `px btn mini ${kind}`;
     b.setAttribute('aria-label', aria);
-    b.title = u.result && !u.result.ok && !v && !u.checking ? u.result.error ?? "Couldn't check for updates." : '';
+    b.title = u.disabled ? 'הגרסה מתעדכנת בינתיים מתוך קוד המקור; לא נבדקה זמינות גרסה חדשה.' : u.result && !u.result.ok && !v && !u.checking ? u.result.error ?? "Couldn't check for updates." : '';
     clearTimeout(freshTimer);
-    if (fresh) freshTimer = setTimeout(() => state && updateButton(), FRESH - (Date.now() - u.result.at) + 50);
+    if (fresh && !u.disabled) freshTimer = setTimeout(() => state && updateButton(), FRESH - (Date.now() - u.result.at) + 50);
   }
   $('head-update').addEventListener('click', () => act(state?.update?.available ? 'install_update' : 'update'));
   // Quit asks first: the first press turns it into Confirm for 4 s, the second quits.
