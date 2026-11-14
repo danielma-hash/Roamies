@@ -21,6 +21,8 @@ concurrency:
 
 jobs:
   build:
+    # Disabled until the fork has a reviewed signing identity, manifest and update policy.
+    if: ${{ vars.ROAMIES_SIGNED_RELEASES == 'enabled' }}
     strategy:
       fail-fast: false
       matrix:
