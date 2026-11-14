@@ -7,6 +7,14 @@ import nodePath from 'node:path';
 
 const HOME = '/Users/ken';
 const {checkGitHubRead} = await import('../safety.mjs');
+const {checkGitHubPrCreate} = await import('../safety.mjs');
+const draftPr = {repo:'example/project',head:'feat/test',base:'main',expectedHead:'a'.repeat(40),expectedBase:'b'.repeat(40)};
+assert.equal(checkGitHubPrCreate(draftPr,{allowActions:true}).level,ASK);
+assert.equal(checkGitHubPrCreate(draftPr,{allowActions:false}).level,BLOCK);
+assert.equal(checkGitHubPrCreate({...draftPr,head:'main'},{allowActions:true}).level,BLOCK);
+assert.equal(checkGitHubPrCreate({...draftPr,repo:'example/../evil'},{allowActions:true}).level,BLOCK);
+assert.equal(checkGitHubPrCreate({...draftPr,head:''},{allowActions:true}).level,BLOCK);
+assert.equal(checkGitHubPrCreate({...draftPr,head:'--force'},{allowActions:true}).level,BLOCK);
 assert.equal(checkGitHubRead('https://github.com/example/project/pull/12').level, SAFE);
 assert.equal(checkGitHubRead('https://github.com/example/project/issues/12').kind, 'issues');
 for (const url of ['http://github.com/a/b/pull/1', 'https://github.com/a/../pull/1', 'https://github.com/a/b/pull/1?write=1', 'https://github.com/a/b/pull/1/merge', 'https://evil.test/a/b/pull/1']) assert.equal(checkGitHubRead(url).level, BLOCK);

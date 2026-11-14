@@ -126,6 +126,15 @@ export function checkGitHubRead(value) {
   return { ...verdict(SAFE), owner: match[1], repo: match[2], kind: match[3], number: Number(match[4]) };
 }
 
+/** Draft PR creation always needs exact approval; arbitrary gh writes remain unavailable. */
+export function checkGitHubPrCreate(input, { allowActions = false } = {}) {
+  if (!allowActions || !input || typeof input.repo !== 'string' || checkGitHubRead(`https://github.com/${input.repo}/pull/1`).level !== SAFE
+    || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(input.expectedHead ?? '') || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(input.expectedBase ?? '')
+    || ![input.head,input.base].every(value=>typeof value==='string'&&value.length>0&&value.length<=200&&!/\s|[\x00-\x1f]/.test(value)&&!value.startsWith('-'))
+    || input.head === input.base || ['main','master'].includes(input.head.toLowerCase())) return verdict(BLOCK, 'פתיחת PR אינה מורשית עבור היעד הזה.');
+  return verdict(ASK, 'נדרש אישור לתוכן, ל־repo ול־SHA המדויקים של טיוטת ה־PR.');
+}
+
 /** read_file / list_files / search_files. Returns { level, reason, path }. */
 export function checkRead(p, home, { recursive = false } = {}) {
   home = slash(home);
