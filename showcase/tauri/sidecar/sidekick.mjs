@@ -24,6 +24,8 @@ import { TaskRunService } from './task-run.service.ts';
 import { TaskRunStoreService } from './task-run-store.service.ts';
 import { TaskRunError } from './task-run-error.ts';
 import { createTaskRunTools } from './task-run-tools.ts';
+import { GitHubReadService } from './github-read.service.ts';
+import { createGitHubReadTools } from './github-read-tools.ts';
 import { TaskBudgetService, withTaskBudget, DEFAULT_TASK_BUDGET } from './task-budget.service.ts';
 import { TaskBudgetError } from './task-budget-error.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
@@ -1395,6 +1397,7 @@ const taskRuns = new TaskRunService(new TaskRunStoreService(path.join(workspaceD
 let taskRecoveryError;
 await taskRuns.initialize().catch((error) => { taskRecoveryError = error.message; });
 tools.push(...createTaskRunTools(taskRuns));
+tools.push(...createGitHubReadTools(new GitHubReadService()));
 const browserDocker = localDockerProcess();
 const browserTasks = browserDocker ? new BrowserTaskService({
   docker: (args, input, signal) => browserDocker.run(args, input, signal),

@@ -1,0 +1,13 @@
+import {z} from 'zod';
+export const githubReadSchema=z.strictObject({url:z.string().min(1).max(500)});
+export const githubShaSchema=z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/);
+export const githubPinnedSchema=githubReadSchema.extend({expectedHead:githubShaSchema,expectedBase:githubShaSchema,page:z.number().int().min(1).max(150).default(1)});
+export const githubPatchSchema=githubPinnedSchema.extend({filename:z.string().min(1).max(1000),offset:z.number().int().min(0).max(1_000_000).default(0)});
+const text=z.string().max(1_000_000);
+const count=z.number().int().min(0).max(10_000_000);
+const ref=z.object({sha:githubShaSchema,ref:z.string().max(1000)});
+export const githubPrSchema=z.object({html_url:z.string(),number:count,title:text,body:text.nullable(),state:z.enum(['open','closed']),draft:z.boolean(),merged:z.boolean(),head:ref,base:ref,changed_files:count,updated_at:z.iso.datetime()});
+export const githubIssueSchema=z.object({html_url:z.string(),number:count,title:text,body:text.nullable(),state:z.enum(['open','closed']),updated_at:z.iso.datetime(),labels:z.array(z.object({name:z.string().max(200)})).max(100),pull_request:z.unknown().optional()});
+export const githubFilesSchema=z.array(z.object({filename:z.string().min(1).max(1000),previous_filename:z.string().max(1000).optional(),status:z.string().max(30),additions:count,deletions:count,changes:count,patch:text.optional()})).max(20);
+export const githubChecksSchema=z.object({total_count:count,check_runs:z.array(z.object({name:z.string().max(200),head_sha:githubShaSchema,status:z.string().max(40),conclusion:z.string().max(40).nullable()})).max(20)});
+export const githubStatusesSchema=z.array(z.object({context:z.string().max(200),state:z.string().max(40),description:z.string().max(1000).nullable()})).max(20);

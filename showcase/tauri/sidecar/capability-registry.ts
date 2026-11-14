@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { AgentTool } from '@kenkaiiii/gg-agent';
 
-const families = ['core', 'sessions', 'memory', 'web', 'browser', 'desktop', 'files', 'commitments', 'visuals'] as const;
+const families = ['core', 'sessions', 'memory', 'web', 'browser', 'desktop', 'files', 'commitments', 'visuals', 'github'] as const;
 type Family = typeof families[number];
 const descriptions: Readonly<Record<Family, string>> = {
   core: 'פתיחת קישור או יישום, הצגת רשימה, ציור ותכנון צעדים',
@@ -13,6 +13,7 @@ const descriptions: Readonly<Record<Family, string>> = {
   files: 'חיפוש, קריאה וכתיבת קבצים ופקודות מקומיות לפי מדיניות הבטיחות',
   commitments: 'רשימות, התחייבויות ותזכורות',
   visuals: 'תמונה, טבלה, גרף, טופס, לוח ותרשים במרחב העבודה',
+  github: 'קריאת issues, PRs, בדיקות וקטעי diff עם אימות SHA',
 };
 const requirements: Readonly<Record<Family, readonly string[]>> = {
   core: ['Roamies UI'], sessions: ['Claude local history; Claude CLI and sign-in for managed runs; exact action approval'],
@@ -21,8 +22,10 @@ const requirements: Readonly<Record<Family, readonly string[]>> = {
   desktop: ['Native helpers; visible window; macOS Accessibility where applicable; action settings and policy'],
   files: ['Local filesystem permissions and safety policy; confirmation where required'],
   commitments: ['Local Roamies storage'], visuals: ['Roamies UI; readable image when requested'],
+  github: ['Local gh CLI authenticated with repository read access; github.com only'],
 };
 function familyOf(name: string): Family {
+  if (name.startsWith('github_')) return 'github';
   if (name.startsWith('claude_') || name === 'show_session_center') return 'sessions';
   if (name === 'asm_recall' || name === 'forget_fact') return 'memory';
   if (name === 'fetch_url') return 'web';
@@ -51,7 +54,7 @@ export class CapabilityRegistry {
     };
     const discovery: AgentTool = {
       name: 'discover_capabilities',
-      description: 'Discover Jarvis capabilities and load the relevant tool family before use: sessions (Claude session center/history/control), memory (ASM recall/facts), web (fetch_url first), browser (isolated JavaScript pages), desktop (app windows), files, commitments, visuals. Omit family to list configuration and requirements. configured is not a live health check. Loading tools never grants action permission. Prefer direct read/API over browser, Accessibility over screenshots; do not claim a capability is missing without discovery.',
+      description: 'Discover Jarvis capabilities and load the relevant tool family before use: sessions (Claude session center/history/control), memory (ASM recall/facts), web (fetch_url first), browser (isolated JavaScript pages), desktop (app windows), files, commitments, visuals, github (issues/PRs/checks/pinned diff fragments). Omit family to list configuration and requirements. configured is not a live health check. Loading tools never grants action permission. Prefer direct read/API over browser, Accessibility over screenshots; do not claim a capability is missing without discovery.',
       parameters: z.object({ family: z.enum(families).optional() }),
       executionMode: 'sequential',
       execute: async (input: unknown) => {

@@ -6,6 +6,10 @@ import os from 'node:os';
 import nodePath from 'node:path';
 
 const HOME = '/Users/ken';
+const {checkGitHubRead} = await import('../safety.mjs');
+assert.equal(checkGitHubRead('https://github.com/example/project/pull/12').level, SAFE);
+assert.equal(checkGitHubRead('https://github.com/example/project/issues/12').kind, 'issues');
+for (const url of ['http://github.com/a/b/pull/1', 'https://github.com/a/../pull/1', 'https://github.com/a/b/pull/1?write=1', 'https://github.com/a/b/pull/1/merge', 'https://evil.test/a/b/pull/1']) assert.equal(checkGitHubRead(url).level, BLOCK);
 const failures = [];
 const cases = (label, fn, table) => {
   for (const [input, want] of table) {
