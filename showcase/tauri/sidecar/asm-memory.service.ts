@@ -8,6 +8,7 @@ const DEFAULT_PROJECTS: Readonly<Record<string, AsmMemoryScope>> = {
   pacobot: 'company', vocaly: 'company', ordico: 'company', knx: 'company',
   'software-factory': 'company', 'ai-spend-tower': 'company',
   gather: 'personal', anna: 'personal', ultron: 'personal', 'ipracticom-deck': 'personal',
+  roamies: 'personal',
 };
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -97,6 +98,10 @@ export class AsmMemoryService {
     }
     return candidates.sort((a, b) => b.score - a.score || Date.parse(b.citation.date ?? '1970-01-01') - Date.parse(a.citation.date ?? '1970-01-01') || a.citation.id.localeCompare(b.citation.id))
       .slice(0, this.maxResults).map(({ citation }) => citation);
+  }
+
+  projectScope(project: string): AsmMemoryScope | undefined {
+    return Object.entries(this.projects).find(([name]) => normalized(name) === normalized(project))?.[1];
   }
 
   private scope(content: string, explicit: unknown): AsmMemoryScope | undefined {

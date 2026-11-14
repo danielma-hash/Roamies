@@ -15,6 +15,7 @@ const record = z.object({
     root: z.string().max(4096), digest: z.string().regex(/^[a-f0-9]{64}$/), loadedAt: z.number().finite().nonnegative(),
     sources: z.array(z.object({ path: z.string().max(4096), sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(0).max(32 * 1024) })).max(24),
   }).optional(),
+  memoryScope: z.object({ project: z.string().max(100), scope: z.enum(['company', 'personal']) }).optional(),
 });
 const journal = z.object({ version: z.literal(1), runs: z.array(record).max(100) });
 const MAX_BYTES = 64 * 1024 * 1024;

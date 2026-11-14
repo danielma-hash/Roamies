@@ -1378,7 +1378,8 @@ if (desktopProcess) tools.push(...createDesktopTools(new DesktopDriverService({
   policy: (windowId) => hands('desktop-policy', String(windowId)),
   allowActions: () => config.allowActions && !recipeReadOnly, confirm: confirmClaudeControl,
 })));
-const claudeRuns = new ClaudeRunService({ journal: new ClaudeRunJournal(path.join(workspaceData, 'claude-runs.json')), executable: localClaudeExecutable, env: () => ({ ...process.env, CLAUDECODE: undefined }),
+const asmMemory = new AsmMemoryService();
+const claudeRuns = new ClaudeRunService({ memory: asmMemory, journal: new ClaudeRunJournal(path.join(workspaceData, 'claude-runs.json')), executable: localClaudeExecutable, env: () => ({ ...process.env, CLAUDECODE: undefined }),
   query: claudeSessionQuery, activeSessionIds: () => activeClaudeSessionIds(localClaudeExecutable()),
   allowActions: () => config.allowActions && !recipeReadOnly, confirm: confirmClaudeControl });
 let claudeRecoveryError;
@@ -1394,7 +1395,6 @@ setInterval(() => {
   if (next !== lastClaudeRuns) { lastClaudeRuns = next; panel(); }
 }, 1500).unref();
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
-const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
 const livePanels = new LivePanelService(new LivePanelStoreService(path.join(workspaceData, 'live-panels.json')));
 let livePanelError;
