@@ -8,6 +8,8 @@ import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { checkRead, checkWrite, classifyCommand, SAFE, BLOCK } from './safety.mjs';
 import { CLAUDE_SESSION_ID, redactClaudeText } from './claude-sessions.service.js';
 import { ClaudeInputQueue } from './claude-input-queue.js';
+import { ProjectContextService } from './project-context.service.js';
+import type { ProjectContextReceipt } from './project-context.types.js';
 import type { ClaudeRunOptions, ClaudeRunSnapshot, ClaudeRunState } from './claude-run.types.js';
 
 export class ClaudeRunError extends Error {
@@ -17,6 +19,7 @@ interface Run {
   readonly id: string; readonly title: string; readonly cwd: string;
   readonly input: ClaudeInputQueue; readonly query: Query; readonly abort: AbortController;
   readonly pending: string[];
+  readonly projectContext: ProjectContextReceipt;
   state: ClaudeRunState; lastReply: string; error?: string; done?: Promise<void>;
   currentInstruction?: string; updatedAt: number;
 }
@@ -30,7 +33,7 @@ export class ClaudeRunService {
   private initialization?: Promise<void>;
   private saving: Promise<void> = Promise.resolve();
   private storageError?: Error;
-  constructor(private readonly options: ClaudeRunOptions) {}
+  constructor(private readonly options: ClaudeRunOptions, private readonly projectContext = new ProjectContextService()) {}
 
   initialize(): Promise<void> {
     return this.initialization ??= (async () => {
@@ -63,6 +66,7 @@ export class ClaudeRunService {
   private snapshot(run: Run): ClaudeRunSnapshot {
     return { id: run.id, title: run.title, cwd: run.cwd, state: run.state, queued: run.pending.length,
       lastReply: run.lastReply, updatedAt: run.updatedAt,
+      projectContext: run.projectContext,
       recoveryInstructions: [run.currentInstruction, ...run.pending].filter((text): text is string => text !== undefined).map((text) => redactClaudeText(text).slice(0, 12_000)),
       ...(run.error ? { error: run.error } : {}) };
   }
@@ -103,6 +107,7 @@ export class ClaudeRunService {
       }
       // Fail closed if the native CLI cannot enumerate live interactive/background sessions.
       if (resume && (await this.options.activeSessionIds()).includes(id)) throw new ClaudeRunError('הסשן עדיין פתוח ב-Claude. סגור אותו שם לפני העברה לג׳ארוויס; ההיסטוריה תישמר.');
+      const projectContext = await this.projectContext.load(cwd);
       this.enabled(signal);
       const input = new ClaudeInputQueue();
       const abort = new AbortController();
@@ -111,7 +116,8 @@ export class ClaudeRunService {
         cwd, ...(resume ? { resume } : { sessionId: id, title: redactClaudeText(title).slice(0, 160) }), pathToClaudeCodeExecutable: this.options.executable(),
         env: this.options.env?.(), settingSources: [], strictMcpConfig: true, mcpServers: {},
         tools: TOOLS, permissionMode: 'default', persistSession: true, verbatimPrompts: true,
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: 'Respond in Hebrew. Follow project instructions. Never merge, deploy, publish or message others without explicit user instruction. This session is controlled by JARVIS; report what was actually verified.' },
+        // Resume must use the newly loaded instruction snapshot, not a previously recorded append.
+        systemPrompt: { type: 'preset', preset: 'claude_code', snapshot: false, append: projectContext.prompt },
         abortController: abort,
         hooks: { PreToolUse: [{ hooks: [async (event) => {
           if (event.hook_event_name !== 'PreToolUse' || !run) return { continue: false };
@@ -121,7 +127,7 @@ export class ClaudeRunService {
         canUseTool: async () => ({ behavior: 'deny', message: 'הפעולה חייבת לעבור דרך בדיקת הבטיחות של ג׳ארוויס.' }),
       } });
       run = { id, title: redactClaudeText(title).slice(0, 160) || 'סשן Claude', cwd, input, query, abort,
-        pending: [], state: 'starting', lastReply: this.recovered.get(id)?.lastReply ?? '', currentInstruction: text, updatedAt: Date.now() };
+        projectContext: projectContext.receipt, pending: [], state: 'starting', lastReply: this.recovered.get(id)?.lastReply ?? '', currentInstruction: text, updatedAt: Date.now() };
       this.runs.set(id, run);
       this.recovered.delete(id);
       this.changed(run);

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Options, Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeRunService } from '../claude-run.service.js';
@@ -87,4 +87,21 @@ it('fails closed when live-session enumeration fails', async () => {
   const h = await harness();
   const service = new ClaudeRunService({ executable: () => '/claude', allowActions: () => true, confirm: async () => true, query: h.query, activeSessionIds: async () => { throw new Error('unavailable'); } });
   await expect(service.start(h.cwd, 'test', 'go', id)).rejects.toThrow(); expect(h.query).not.toHaveBeenCalled();
+});
+it('injects project guidance without activating filesystem settings and reloads it on resume', async () => {
+  const h = await harness(); await writeFile(join(h.cwd, 'AGENTS.md'), 'Fixture protocol: ALPHA_739.');
+  const first = await h.service.start(h.cwd, 'test', 'go', id);
+  expect(h.options()).toMatchObject({ settingSources: [], strictMcpConfig: true, mcpServers: {}, systemPrompt: { snapshot: false, append: expect.stringContaining('ALPHA_739') } });
+  expect(first.projectContext?.sources).toHaveLength(1);
+  h.service.stop(id);
+  await writeFile(join(h.cwd, 'AGENTS.md'), 'Fixture protocol: BETA_819.');
+  const next = await h.service.start(h.cwd, 'test', 'continue', id);
+  expect(next.projectContext?.digest).not.toBe(first.projectContext?.digest);
+  expect(h.options()).toMatchObject({ systemPrompt: { append: expect.stringContaining('BETA_819') } });
+  h.service.close();
+});
+it('never starts the SDK when required project guidance cannot be loaded', async () => {
+  const h = await harness(); await writeFile(join(h.cwd, 'AGENTS.md'), 'x'.repeat(33 * 1024));
+  await expect(h.service.start(h.cwd, 'test', 'go', id)).rejects.toThrow('32 KiB');
+  expect(h.query).not.toHaveBeenCalled(); expect(h.service.list()).toEqual([]);
 });

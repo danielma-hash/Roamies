@@ -11,6 +11,10 @@ const record = z.object({
   queued: z.number().int().min(0).max(10), lastReply: z.string().max(8000),
   error: z.string().max(1000).optional(), updatedAt: z.number().finite().nonnegative().optional(),
   recoveryInstructions: z.array(z.string().max(12_000)).max(11).optional(),
+  projectContext: z.object({
+    root: z.string().max(4096), digest: z.string().regex(/^[a-f0-9]{64}$/), loadedAt: z.number().finite().nonnegative(),
+    sources: z.array(z.object({ path: z.string().max(4096), sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().min(0).max(32 * 1024) })).max(24),
+  }).optional(),
 });
 const journal = z.object({ version: z.literal(1), runs: z.array(record).max(100) });
 const MAX_BYTES = 64 * 1024 * 1024;
