@@ -87,7 +87,7 @@ export class WorkspaceController {
       if(input.action==='attention.preferences'&&this.attention){await this.attention.setPreferences({quiet:input.quiet,focus:input.focus});this.current={...this.current,attention:await this.attention.snapshot()};return;}
       if(input.action==='attention.dismiss'&&input.id&&this.attention){await this.attention.dismiss(input.id);this.current={...this.current,attention:await this.attention.snapshot()};return;}
       if ((input.action==='tasks.add'||input.action==='tasks.refresh')&&input.url&&this.tasks){this.current={...this.current,cards:await this.tasks.track(input.url,input.monday)};return;}
-      if (input.action === 'memory.search' && input.scope && this.memory) { this.current = { ...this.current, citations: await this.memory.search(input.query ?? '', { scope: input.scope }) }; return; }
+      if (input.action === 'memory.search' && input.scope && this.memory) { this.current = { ...this.current, citations: [] }; this.current = { ...this.current, citations: await this.memory.search(input.query ?? '', { scope: input.scope }) }; return; }
       if (input.action === 'sessions.list') { this.query=input.query??'';this.current = { ...this.current, ...await this.sessions.list({ query: input.query }), observing: (await this.hooks?.status())?.installed }; }
       else if (input.action === 'sessions.observe' && this.hooks) { await this.hooks.install(); this.current = { ...this.current, observing: true, message: 'המעקב הופעל. שיחות Claude חדשות ישלחו אירועי מצב בלבד.' }; }
       else if (input.id) {

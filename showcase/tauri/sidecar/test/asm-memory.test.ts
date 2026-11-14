@@ -117,10 +117,10 @@ describe('local read-only ASM recall', () => {
 
   it('fails closed for an oversized or symlinked ledger and tolerates absent ASM', async () => {
     const root = await fixture([memory('m')]);
-    expect(await new AsmMemoryService({ root, maxFileBytes: 10 }).search('זיכרון', { scope: 'company' })).toEqual([]);
+    await expect(new AsmMemoryService({ root, maxFileBytes: 10 }).search('זיכרון', { scope: 'company' })).rejects.toThrow('מגבלת הגודל');
     await fs.unlink(path.join(root, 'lifecycle.jsonl'));
     await fs.symlink(path.join(root, 'memory.jsonl'), path.join(root, 'lifecycle.jsonl'));
-    expect(await new AsmMemoryService({ root }).search('זיכרון', { scope: 'company' })).toEqual([]);
+    await expect(new AsmMemoryService({ root }).search('זיכרון', { scope: 'company' })).rejects.toThrow('לא ניתן לרענן');
     expect(await new AsmMemoryService({ root: path.join(root, 'missing') }).search('זיכרון', { scope: 'company' })).toEqual([]);
   });
 });
