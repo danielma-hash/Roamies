@@ -13,7 +13,9 @@ export class LiveQueryService {
  constructor(private readonly read:LiveQueryReader,private readonly publish:(message:LiveQueryMessage)=>void,private readonly allowed:()=>boolean){}
  activate(panel:LivePanelEnvelope|undefined,visible:boolean):void{
   const active=visible&&this.allowed();const signature=panel?`${panel.id}:${panel.revision}`:'';
-  if(this.signature===signature&&this.active===active)return;
+  // A restored WebView can miss the initial pause before its panel is mounted.
+  // Re-publish that data-free state on visibility sync, without restarting active polling.
+  if(this.signature===signature&&this.active===active&&active)return;
   this.stop();this.signature=signature;this.active=active;
   if(!panel)return;
   for(const block of panel.spec.blocks){if(block.kind!=='query')continue;
