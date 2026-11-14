@@ -4,6 +4,7 @@ import { redactClaudeText } from './claude-sessions.service.js';
 import { TaskRunStoreService } from './task-run-store.service.js';
 import { TaskRunError } from './task-run-error.js';
 import type { TaskRun, TaskRunArchive } from './task-run.types.js';
+import type { TaskBudgetSnapshot } from './task-budget.types.js';
 
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value) ?? 'undefined').digest('hex');
 const unfinished = (run: TaskRun): boolean => run.status === 'queued' || run.status === 'running';
@@ -62,46 +63,52 @@ export class TaskRunService {
       run.status = 'running'; run.conversationId = conversationId; run.updatedAt = Date.now();
     });
   }
-  beginTool(id: string, callId: string, name: string, args: unknown): Promise<void> {
+  beginTool(id: string, callId: string, name: string, args: unknown, budget?: TaskBudgetSnapshot): Promise<void> {
     return this.change((runs) => {
       const run = this.find(runs, id);
       if (run.status !== 'running') throw new TaskRunError('המשימה כבר אינה פעילה.');
       if (run.tools.some((tool) => tool.id === callId)) throw new TaskRunError('קריאה זו כבר נרשמה. יש לבדוק את היעד לפני ניסיון חוזר.');
       if (run.tools.length >= 200) throw new TaskRunError('המשימה הגיעה למגבלת 200 קריאות כלים.');
       run.tools.push({ id: callId, name, argsDigest: digest(args), status: 'pending' }); run.updatedAt = Date.now();
+      if (budget) run.budget = budget;
     });
   }
-  endTool(id: string, callId: string, result: unknown, error = false): Promise<void> {
+  endTool(id: string, callId: string, result: unknown, error = false, budget?: TaskBudgetSnapshot): Promise<void> {
     return this.change((runs) => {
       const run = this.find(runs, id); const tool = run.tools.find((item) => item.id === callId);
       if (!tool) throw new TaskRunError('אין checkpoint לקריאת הכלי.');
       // Late results after interruption do not turn an uncertain outcome into verified success.
       if (run.status !== 'running' || tool.status !== 'pending') return;
       tool.status = error ? 'error' : 'returned'; tool.resultDigest = digest(result); run.updatedAt = Date.now();
+      if (budget) run.budget = budget;
     });
   }
-  finish(id: string, status: 'returned' | 'failed' | 'interrupted'): Promise<void> {
+  finish(id: string, status: 'returned' | 'failed' | 'interrupted', budget?: TaskBudgetSnapshot): Promise<void> {
     return this.change((runs) => {
       const run = this.find(runs, id);
       if (!unfinished(run)) return;
       run.status = status; run.updatedAt = Date.now();
+      if (budget) run.budget = budget;
       for (const tool of run.tools) if (tool.status === 'pending') tool.status = 'unknown';
     });
   }
   interruptAll(): Promise<void> {
     return this.change((runs) => { for (const run of runs) if (unfinished(run)) this.interrupt(run); });
   }
-  wrap(tools: readonly AgentTool[], current: () => string | undefined, onStorageFailure: () => void): AgentTool[] {
+  updateBudget(id: string, budget: TaskBudgetSnapshot): Promise<void> {
+    return this.change((runs) => { const run = this.find(runs, id); if (run.status === 'running') run.budget = budget; });
+  }
+  wrap(tools: readonly AgentTool[], current: () => string | undefined, onStorageFailure: () => void, budget?: () => TaskBudgetSnapshot | undefined): AgentTool[] {
     return tools.map((tool) => ({ ...tool, execute: async (args: unknown, context) => {
       context.signal.throwIfAborted();
       const id = current(); if (!id) throw new TaskRunError('אין משימה פעילה לביצוע הכלי.');
       try {
-        await this.beginTool(id, context.toolCallId, tool.name, args);
+        await this.beginTool(id, context.toolCallId, tool.name, args, budget?.());
         context.signal.throwIfAborted();
         let result;
         try { result = await tool.execute(args, context); }
-        catch (error: unknown) { await this.endTool(id, context.toolCallId, 'tool threw; effects may already have occurred', true); throw error; }
-        await this.endTool(id, context.toolCallId, result);
+        catch (error: unknown) { await this.endTool(id, context.toolCallId, 'tool threw; effects may already have occurred', true, budget?.()); throw error; }
+        await this.endTool(id, context.toolCallId, result, false, budget?.());
         return result;
       } catch (error: unknown) { if (this.failure) onStorageFailure(); throw error; }
     } }));

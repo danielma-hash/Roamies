@@ -3,6 +3,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { expect, it, vi } from 'vitest';
 import { TaskRunError } from '../task-run-error.js';
+import { TaskBudgetError } from '../task-budget-error.js';
+import { TaskBudgetService } from '../task-budget.service.js';
 
 it('the real prompt catch reports the original failure and releases busy state', async () => {
   const source = readFileSync(new URL('../sidekick.mjs', import.meta.url), 'utf8');
@@ -14,7 +16,7 @@ it('the real prompt catch reports the original failure and releases busy state',
   const finish = vi.fn(async () => {});
   const context = vm.createContext({
     readyAgent: async () => null, busy: false, quiet: false, autoTurn: null, holdWake: () => {}, intro: null,
-    shuttingDown: false, TaskRunError, taskRuns: { start: async () => {}, finish },
+    shuttingDown: false, TaskRunError, TaskBudgetError, TaskBudgetService, activeBudget: undefined, taskRuns: { start: async () => {}, finish },
     activity: { asked: () => {}, stopped: () => [] }, menu: () => {}, AbortController,
     agent: { setSignal: () => {} }, controller: null, ui: (event: unknown) => events.push(event),
     VOICE_ON: () => false, speech: { stop: () => {} }, turnVoice: null,
@@ -24,7 +26,7 @@ it('the real prompt catch reports the original failure and releases busy state',
     console: { error: () => {} }, lastFailed: false, syncSession: () => {}, lastInput: null, session: null,
   });
   await vm.runInContext(`${prompt!.getText(module)}; prompt('fixture request', null, '', false, 'fixture-task')`, context);
-  expect(finish).toHaveBeenCalledWith('fixture-task', 'failed');
+  expect(finish).toHaveBeenCalledWith('fixture-task', 'failed', expect.objectContaining({ tools: 0, usageReported: false }));
   expect(format).toHaveBeenCalledWith('reply', failure, { who: 'Fixture' });
   expect(events).toContainEqual({ kind: 'agent', e: { type: 'error', message: 'השירות לא השלים את התשובה.', speech: null } });
   expect(context.busy).toBe(false); expect(context.lastFailed).toBe(true);
