@@ -27,7 +27,7 @@ const requirements: Readonly<Record<Family, readonly string[]>> = {
 function familyOf(name: string): Family {
   if (name.startsWith('github_')) return 'github';
   if (name.startsWith('claude_') || name === 'show_session_center') return 'sessions';
-  if (name === 'asm_recall' || name === 'forget_fact') return 'memory';
+  if (name === 'asm_recall' || name === 'asm_read_record' || name === 'forget_fact') return 'memory';
   if (name === 'fetch_url') return 'web';
   if (name.startsWith('browser_')) return 'browser';
   if (name.startsWith('desktop_') || ['take_screenshot','list_windows','read_window','act_in_app'].includes(name)) return 'desktop';

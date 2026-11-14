@@ -2,6 +2,9 @@ import { AsmIndexService } from './asm-index.service.js';
 import type { AsmIndexSnapshot } from './asm-index.types.js';
 import os from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {AsmMemoryError} from './asm-memory-error.js';
+import {asmRecordSchema} from './asm-record.schema.js';
 import type { AsmLifecycleState, AsmMemoryCitation, AsmMemoryOptions, AsmMemoryScope, AsmMemorySearchOptions } from './asm-memory.types.js';
 
 const DEFAULT_PROJECTS: Readonly<Record<string, AsmMemoryScope>> = {
@@ -57,11 +60,7 @@ export class AsmMemoryService {
     const project = options.project?.trim();
     const projectTerm = project ? ` ${normalized(project)} ` : undefined;
     if (project && !Object.entries(this.projects).some(([name, scope]) => normalized(name) === normalized(project) && scope === options.scope)) return [];
-    const snapshot = await this.index.snapshot();
-    if (this.snapshot !== snapshot) {
-      this.states = this.lifecycle(snapshot.memories, snapshot.operations);
-      this.snapshot = snapshot;
-    }
+    const snapshot = await this.currentSnapshot();
     const { memories, nodes } = snapshot; const states = this.states;
     const candidates: { citation: AsmMemoryCitation; score: number }[] = [];
     for (const source of ['vault', 'memory'] as const) {
@@ -102,6 +101,39 @@ export class AsmMemoryService {
 
   projectScope(project: string): AsmMemoryScope | undefined {
     return Object.entries(this.projects).find(([name]) => normalized(name) === normalized(project))?.[1];
+  }
+
+  /** Reads one stored record, never a file path supplied by its content. */
+  async readRecord(raw:unknown) {
+    const input=asmRecordSchema.parse(raw),offset=input.offset??0;
+    if(offset>0&&!input.expectedDigest)throw new AsmMemoryError('להמשך הקריאה נדרשת גרסת הרשומה מהחלק הקודם.');
+    const denied=()=>new AsmMemoryError('הרשומה אינה זמינה בתחום ובמצב הנוכחיים.');
+    if(input.project&&this.projectScope(input.project)!==input.scope)throw denied();
+    const snapshot=await this.currentSnapshot();
+    const matches=snapshot.memories.filter(row=>`memory:${recordId(text(row.id))}`===input.id);
+    if(matches.length!==1)throw denied();
+    const row=matches[0]!,state=this.states.get(`record:${recordId(input.id)}`);
+    if(state?.status==='closed'||state?.status==='retired')throw denied();
+    const fields={summary:text(row.summary),details:text(row.details),decisions:strings(row.decisions),open_threads:strings(row.open_threads),files:strings(row.files),created_at:text(row.created_at)};
+    // Classify every field we expose, including decisions omitted from search excerpts.
+    const content=[fields.summary,fields.details,...fields.decisions,...fields.open_threads,...fields.files,fields.created_at,text(row.project)].join('\n');
+    if(this.scope(content,row.scope)!==input.scope||(input.project&&!includesProject(content,input.project)))throw denied();
+    const stored=JSON.stringify(fields,null,2);
+    if(stored.length>131_072)throw new AsmMemoryError('הרשומה גדולה מדי לקריאה ממוקדת.');
+    // Redact before JSON escaping and paging so secrets spanning a page boundary
+    // or a multiline private key cannot leak in fragments.
+    const clean=JSON.stringify({summary:safeText(fields.summary),details:safeText(fields.details),decisions:fields.decisions.map(safeText),open_threads:fields.open_threads.map(safeText),files:fields.files.map(safeText),created_at:safeText(fields.created_at)},null,2);
+    const digest=createHash('sha256').update(clean).digest('hex');
+    if(input.expectedDigest&&input.expectedDigest!==digest)throw new AsmMemoryError('הרשומה השתנתה; יש להתחיל קריאה חדשה.');
+    if(offset>=clean.length)throw new AsmMemoryError('מיקום הקריאה מחוץ לרשומה.');
+    const end=Math.min(offset+4000,clean.length);
+    return {id:input.id,source:'memory' as const,scope:input.scope,project:input.project,status:state?.status==='done'?'done':'active',digest,offset,text:clean.slice(offset,end),totalChars:clean.length,nextOffset:end<clean.length?end:undefined,historical:true,untrustedContent:true,verified:false,observedAt:new Date().toISOString()};
+  }
+
+  private async currentSnapshot():Promise<AsmIndexSnapshot> {
+    const snapshot=await this.index.snapshot();
+    if(this.snapshot!==snapshot){this.states=this.lifecycle(snapshot.memories,snapshot.operations);this.snapshot=snapshot;}
+    return snapshot;
   }
 
   private scope(content: string, explicit: unknown): AsmMemoryScope | undefined {
