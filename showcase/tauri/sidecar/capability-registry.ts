@@ -31,7 +31,7 @@ function familyOf(name: string): Family {
   if (name === 'fetch_url') return 'web';
   if (name.startsWith('browser_')) return 'browser';
   if (name.startsWith('desktop_') || ['take_screenshot','list_windows','read_window','act_in_app'].includes(name)) return 'desktop';
-  if (['read_file','list_files','search_files','write_file','run_command'].includes(name)) return 'files';
+  if (['read_file','list_files','search_files','write_file','run_command','artifact_export'].includes(name)) return 'files';
   if (['remember_commitment','update_commitment','list_commitments'].includes(name)) return 'commitments';
   if (name === 'see_photo' || name.startsWith('live_panel_')) return 'visuals';
   return 'core';
