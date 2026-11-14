@@ -1,5 +1,6 @@
 import type { ClaudeRunSnapshot } from './claude-run.types.js';
 import type { ClaudeSession } from './claude-sessions.types.js';
+import type { ApprovalOffer } from './scoped-approval.types.js';
 
 export type SessionFilter = 'all' | 'active' | 'attention' | 'interrupted' | 'history';
 export interface SessionCenterRow {
@@ -17,4 +18,5 @@ export interface SessionCenterSnapshot {
   readonly observedAt: number;
   readonly actions: boolean;
   readonly error?: string;
+  readonly approval?: ApprovalOffer;
 }

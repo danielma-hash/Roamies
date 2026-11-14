@@ -26,6 +26,8 @@ export class SessionCenterView {
   private readonly search = node('input');
   private readonly freshness = node('p', 'מתחבר למרכז העבודה…', 'freshness');
   private readonly notice = node('p', '', 'notice');
+  private readonly approval = node('section', '', 'approval');
+  private approvalId?: string;
   private readonly counts = node('div', '', 'metrics');
   private readonly filters = node('div', '', 'filters');
   private readonly pending = new Set<string>();
@@ -45,7 +47,8 @@ export class SessionCenterView {
     root.addEventListener('input', () => { const error = this.store.error(); if (error) this.notice.textContent = error; });
     const sidebar = node('aside'); sidebar.append(this.search, this.filters, this.list);
     const layout = node('div', '', 'session-layout'); layout.append(sidebar, this.detail);
-    root.append(header, this.counts, this.notice, layout);
+    this.approval.hidden = true; this.approval.setAttribute('aria-label', 'אישור פעולה'); this.approval.setAttribute('role', 'region');
+    root.append(header, this.approval, this.counts, this.notice, layout);
     for (const [id, title] of [['all', 'הכול'], ['active', 'עובדים'], ['attention', 'דורשים תשומת לב'], ['interrupted', 'להמשך'], ['history', 'היסטוריה']] as const) {
       const el = button(title, () => { this.filter = id; this.persistView(); this.renderList(); }); el.dataset.filter = id; this.filters.append(el);
     }
@@ -64,6 +67,7 @@ export class SessionCenterView {
     if (message.kind === 'state' && record(message.snapshot) && Array.isArray(message.snapshot.runs) && Array.isArray(message.snapshot.sessions)) {
       // Payload originates in the local sidecar. Native bridge projects it before delivery.
       this.state = message.snapshot as unknown as SessionCenterSnapshot;
+      this.renderApproval();
       this.freshness.textContent = this.state.observedAt ? `החיבור עודכן ב־${new Date(this.state.observedAt).toLocaleTimeString('he-IL')}` : 'ממתין לתצפית ראשונה';
       this.notice.textContent = this.store.error() ?? this.state.error ?? (!this.state.actions ? 'צפייה זמינה. להפעלת סשנים יש להפעיל פעולות בהגדרות.' : '');
       this.counts.replaceChildren(...(['active', 'attention', 'interrupted'] as const).map((filter) => {
@@ -76,6 +80,22 @@ export class SessionCenterView {
       this.notice.textContent = typeof message.error === 'string' ? message.error : message.cancelled ? 'הפעולה בוטלה.' : 'ההוראה התקבלה. ההתקדמות תופיע כאן.';
       this.detail.querySelectorAll<HTMLButtonElement>('button').forEach((el) => { el.disabled = false; });
     } else if (message.kind === 'note' && typeof message.text === 'string') this.notice.textContent = message.text;
+  }
+
+  private renderApproval(): void {
+    const offer = this.state.approval;
+    if (this.approvalId === offer?.id) return;
+    this.approvalId = offer?.id; this.approval.replaceChildren(); this.approval.hidden = !offer;
+    if (!offer) return;
+    this.approval.append(node('h2', 'נדרש אישור לפעולה הזאת'), node('p', offer.question), node('small', 'האישור תקף לבקשה המוצגת בלבד. סגירת החלון או המתנה של שתי דקות מבטלות אותו.'));
+    const answer = (accepted: boolean): void => {
+      this.approval.querySelectorAll<HTMLButtonElement>('button').forEach((el) => { el.disabled = true; });
+      void this.invoke('sidecar_send', { msg: { type: 'session_center_approval', id: offer.id, accepted } }).catch(() => {
+        this.notice.textContent = 'לא התקבל אישור מהאפליקציה. הפעולה לא אושרה מחדש.';
+      });
+    };
+    const controls = node('div', '', 'header-actions'); controls.append(button('אישור הפעולה', () => answer(true)), button('ביטול', () => answer(false))); this.approval.append(controls);
+    this.approval.scrollIntoView({ block: 'nearest' });
   }
 
   private persistView(): void {

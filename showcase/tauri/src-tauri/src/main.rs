@@ -326,6 +326,8 @@ fn sidecar_send(app: AppHandle, window: WebviewWindow, msg: Value) {
 fn session_center_message_allowed(msg: &Value) -> bool {
     match msg.get("type").and_then(Value::as_str) {
         Some("session_center_open") => true,
+        Some("session_center_approval") => msg.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
+            && msg.get("accepted").is_some_and(Value::is_boolean),
         Some("workspace") => matches!(msg.get("action").and_then(Value::as_str),
             Some("sessions.list" | "claude_control_start" | "claude_control_send" | "claude_control_resume" | "claude_control_stop")),
         _ => false,
@@ -1673,6 +1675,8 @@ mod tests {
     #[test]
     fn session_window_only_sends_scoped_session_messages() {
         assert!(session_center_message_allowed(&json!({"type":"session_center_open"})));
+        assert!(session_center_message_allowed(&json!({"type":"session_center_approval", "id":"12345678-1234-4567-8901-123456789abc", "accepted":false})));
+        assert!(!session_center_message_allowed(&json!({"type":"session_center_approval", "id":"wrong", "accepted":"yes"})));
         for action in ["sessions.list", "claude_control_start", "claude_control_send", "claude_control_resume", "claude_control_stop"] {
             assert!(session_center_message_allowed(&json!({"type":"workspace", "action":action})));
         }

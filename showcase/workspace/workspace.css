@@ -17,6 +17,9 @@ button:disabled { opacity: .45; cursor: wait; }
 .metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-block: 22px 12px; }
 .metrics button { padding: 17px; text-align: start; background: #18232b; }
 .notice { min-height: 26px; color: #e7c68e; font-size: 13px; }
+.approval { border: 1px solid #bd9a60; background: #302d24; border-radius: 12px; margin-block: 18px; padding: 20px; }
+.approval p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; unicode-bidi: plaintext; }
+.approval small { display: block; margin-block: 12px; }
 .session-layout { display: grid; grid-template-columns: minmax(240px, 32%) minmax(0, 1fr); gap: 22px; align-items: start; }
 aside { position: sticky; top: 16px; display: grid; gap: 12px; }
 .filters button { font-size: 12px; padding: 5px 9px; }
