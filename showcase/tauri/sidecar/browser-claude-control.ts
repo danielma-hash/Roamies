@@ -4,7 +4,7 @@ export interface ClaudeControlAction {
   readonly action: 'claude_control_start' | 'claude_control_send' | 'claude_control_resume' | 'claude_control_stop';
   readonly id?: string; readonly cwd?: string; readonly title?: string; readonly instruction?: string;
 }
-const labels: Record<ClaudeRunState, string> = { starting: 'מתחבר', running: 'עובד כעת', waiting: 'ממתין לאישור שלך', idle: 'מוכן להוראה', stopped: 'נעצר', failed: 'ההרצה נכשלה' };
+const labels: Record<ClaudeRunState, string> = { starting: 'מתחבר', running: 'עובד כעת', waiting: 'ממתין לאישור שלך', idle: 'מוכן להוראה', stopped: 'נעצר', failed: 'ההרצה נכשלה', interrupted: 'התקדמות שמורה · נדרש המשך מפורש' };
 const drafts = new Map<string, string>();
 let newSessionOpen = false;
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -47,7 +47,12 @@ export function renderClaudeControl(runs: readonly ClaudeRunSnapshot[], send: (a
     card.append(heading, status, project);
     if (run.error) card.append(el('p', run.error));
     if (run.lastReply) { const reply = el('p', run.lastReply); reply.dir = 'auto'; reply.dataset.userContent = ''; card.append(el('h5', 'התשובה האחרונה'), reply); }
-    const ended = run.state === 'stopped' || run.state === 'failed';
+    const ended = ['stopped', 'failed', 'interrupted'].includes(run.state);
+    if (run.state === 'interrupted' && run.recoveryInstructions?.length) {
+      const recovery = el('details'); recovery.append(el('summary', 'הוראות שנשמרו לעיון — אינן נשלחות שוב'));
+      for (const instruction of run.recoveryInstructions) { const text = el('p', instruction); text.dir = 'auto'; text.dataset.userContent = ''; recovery.append(text); }
+      card.append(recovery);
+    }
     card.append(renderClaudeInstruction(run.id, run.title, ended ? 'claude_control_resume' : 'claude_control_send', send));
     if (!ended) card.append(button('עצירת הסשן וביטול התור', () => send({ type: 'workspace', action: 'claude_control_stop', id: run.id })));
     section.append(card);

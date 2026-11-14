@@ -1,6 +1,7 @@
 import type { Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { ClaudeRunJournal } from './claude-run-journal.js';
 
-export type ClaudeRunState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'failed';
+export type ClaudeRunState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'failed' | 'interrupted';
 export interface ClaudeRunSnapshot {
   readonly id: string;
   readonly title: string;
@@ -9,8 +10,11 @@ export interface ClaudeRunSnapshot {
   readonly queued: number;
   readonly lastReply: string;
   readonly error?: string;
+  readonly updatedAt?: number;
+  readonly recoveryInstructions?: readonly string[];
 }
 export interface ClaudeRunOptions {
+  readonly journal?: ClaudeRunJournal;
   readonly executable: () => string;
   readonly env?: () => Record<string, string | undefined>;
   readonly allowActions: () => boolean;

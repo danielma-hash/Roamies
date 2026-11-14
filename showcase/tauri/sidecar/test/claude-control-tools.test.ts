@@ -7,7 +7,7 @@ const snapshot={id,cwd:'/tmp/test-project',title:'בדיקת קולות',state:'
 function setup() {
  const runs=new ClaudeRunService({executable:()=>'/claude',allowActions:()=>true,confirm:async()=>false,query:()=>{throw Error('must not run');},activeSessionIds:async()=>[]});
  const start=vi.spyOn(runs,'start').mockResolvedValue(snapshot);
- const send=vi.spyOn(runs,'send').mockReturnValue({...snapshot,state:'running'});
+ const send=vi.spyOn(runs,'send').mockResolvedValue({...snapshot,state:'running'});
  const stop=vi.spyOn(runs,'stop').mockReturnValue({...snapshot,state:'stopped'});
  vi.spyOn(runs,'list').mockReturnValue([snapshot]);
  let allowed=true,readOnly=false;

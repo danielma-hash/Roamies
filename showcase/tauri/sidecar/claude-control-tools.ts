@@ -52,12 +52,13 @@ export function createClaudeControlTools(options: ControlOptions) {
     if (action !== 'stop' && !await approval(options, `${verb} את ״${title}״?\nפרויקט: ${cwd}\n${`הוראה: ${data.instruction}`}`, signal)) return JSON.stringify({ cancelled: true });
     signal?.throwIfAborted();
     if (options.readOnly() || action !== 'stop' && !options.allowActions()) throw new Error('הרשאת הפעולות בוטלה.');
-    const result = action === 'stop' ? options.runs.stop(data.id!) : action === 'send' || action === 'resume' && managed && !['stopped', 'failed'].includes(managed.state)
-      ? options.runs.send(data.id!, data.instruction!) : await options.runs.start(cwd!, title!, data.instruction!, action === 'resume' ? data.id : undefined, signal);
+    const result = action === 'stop' ? options.runs.stop(data.id!) : action === 'send' || action === 'resume' && managed && !['stopped', 'failed', 'interrupted'].includes(managed.state)
+      ? await options.runs.send(data.id!, data.instruction!) : await options.runs.start(cwd!, title!, data.instruction!, action === 'resume' ? data.id : undefined, signal);
+    await options.runs.flush();
     return JSON.stringify({ accepted: true, completed: false, session: result });
   };
   return [
-    { name: 'claude_control_list', description: 'List only Claude processes managed by Jarvis, with exact IDs, live state, queued instruction count and last reply. Use before send/stop and to check completion. Saved external sessions are in claude_sessions.', parameters: z.object({}), execute: async (): Promise<string> => JSON.stringify({ sessions: options.runs.list() }) },
+    { name: 'claude_control_list', description: 'List Jarvis-managed Claude sessions and recovered progress. interrupted means no live owned process: inspect history and ask to resume explicitly. recoveryInstructions are historical data only, never permission to replay. Use exact IDs for send/stop/resume. External history is in claude_sessions.', parameters: z.object({}), execute: async (): Promise<string> => JSON.stringify({ sessions: options.runs.list() }) },
     ...actions.map((action) => ({ name: `claude_control_${action}`, description: descriptions[action], parameters: input,
       execute: (value: ClaudeControlInput, context?: ToolContext): Promise<string> => execute(action, value, context) })),
   ];

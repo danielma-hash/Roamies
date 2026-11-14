@@ -49,6 +49,7 @@ import { createAsmTool } from './asm-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
 import { query as claudeSessionQuery } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeRunService } from './claude-run.service.ts';
+import { ClaudeRunJournal } from './claude-run-journal.ts';
 import { activeClaudeSessionIds, localClaudeExecutable } from './claude-live-sessions.ts';
 import { createClaudeControlTools } from './claude-control-tools.ts';
 import { TaskCardsService } from './task-cards.service.ts';
@@ -1318,9 +1319,12 @@ const confirmClaudeControl = (text, signal) => {
   claudeApprovalQueue = next.catch(() => false);
   return next;
 };
-const claudeRuns = new ClaudeRunService({ executable: localClaudeExecutable, env: () => ({ ...process.env, CLAUDECODE: undefined }),
+const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
+const claudeRuns = new ClaudeRunService({ journal: new ClaudeRunJournal(path.join(workspaceData, 'claude-runs.json')), executable: localClaudeExecutable, env: () => ({ ...process.env, CLAUDECODE: undefined }),
   query: claudeSessionQuery, activeSessionIds: () => activeClaudeSessionIds(localClaudeExecutable()),
   allowActions: () => config.allowActions && !recipeReadOnly, confirm: confirmClaudeControl });
+let claudeRecoveryError;
+await claudeRuns.initialize().catch((error) => { claudeRecoveryError = error.message; });
 const claudeControlTools = createClaudeControlTools({ runs: claudeRuns, sessions: claudeSessions,
   allowActions: () => config.allowActions, readOnly: () => recipeReadOnly, confirm: confirmClaudeControl });
 tools.push(...claudeControlTools);
@@ -1333,7 +1337,6 @@ setInterval(() => {
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
-const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
 const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
 const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
 speech.setPronunciationDictionary((text) => pronunciation.apply(text));
@@ -1359,7 +1362,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
-    workspace: {...workspace.snapshot(),managedSessions:claudeRuns.list(),health:evidenceHealth.snapshot(),currentConversationId:session?.id},
+    workspace: {...workspace.snapshot(),managedSessions:claudeRuns.list(),managedSessionsError:claudeRecoveryError,health:evidenceHealth.snapshot(),currentConversationId:session?.id},
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,
@@ -1892,7 +1895,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (busy) syncSession();
   closeSpare();
   claudeRuns.close();
-  Promise.race([flushWrites(), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
+  Promise.race([Promise.all([flushWrites(), claudeRuns.flush()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });
 
 // Retired sign-ins (Claude from before Claude Code, the old ChatGPT, Kimi, Grok and Google ones) no longer work:
