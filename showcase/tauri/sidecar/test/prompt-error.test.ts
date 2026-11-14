@@ -5,6 +5,8 @@ import { expect, it, vi } from 'vitest';
 import { TaskRunError } from '../task-run-error.js';
 import { TaskBudgetError } from '../task-budget-error.js';
 import { TaskBudgetService } from '../task-budget.service.js';
+// @ts-expect-error Existing stream adapter is JavaScript.
+import { IncompleteResponseError } from '../agentstream.mjs';
 
 it('the real prompt catch reports the original failure and releases busy state', async () => {
   const source = readFileSync(new URL('../sidekick.mjs', import.meta.url), 'utf8');
@@ -16,7 +18,7 @@ it('the real prompt catch reports the original failure and releases busy state',
   const finish = vi.fn(async () => {});
   const context = vm.createContext({
     readyAgent: async () => null, busy: false, quiet: false, autoTurn: null, holdWake: () => {}, intro: null,
-    shuttingDown: false, TaskRunError, TaskBudgetError, TaskBudgetService, activeBudget: undefined, taskRuns: { start: async () => {}, finish },
+    shuttingDown: false, TaskRunError, TaskBudgetError, TaskBudgetService, IncompleteResponseError, activeBudget: undefined, taskRuns: { start: async () => {}, finish },
     activity: { asked: () => {}, stopped: () => [] }, menu: () => {}, AbortController,
     agent: { setSignal: () => {} }, controller: null, ui: (event: unknown) => events.push(event),
     VOICE_ON: () => false, speech: { stop: () => {} }, turnVoice: null,

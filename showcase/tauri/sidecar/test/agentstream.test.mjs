@@ -1,7 +1,7 @@
 // Failed agent requests must not crash the sidecar. Run: npm test
 import assert from 'node:assert/strict';
 import { AgentStream } from '@kenkaiiii/gg-agent';
-import { agentEvents, stallWatch } from '../agentstream.mjs';
+import { agentEvents, stallWatch, IncompleteResponseError } from '../agentstream.mjs';
 
 const unhandled = [];
 process.on('unhandledRejection', (e) => unhandled.push(e));
@@ -21,6 +21,28 @@ async function* ok() { yield { type: 'text_delta', text: 'OK' }; return 'done'; 
 const types = [];
 for await (const e of agentEvents(new AgentStream(ok(), () => {}))) types.push(e.type);
 assert.deepEqual(types, ['text_delta'], 'a normal run is unchanged');
+// The SDK ends normally after exhausted retries; a final truncation is not success,
+// even when earlier text or tool results arrived. Intermediate continuations are fine.
+for (const reason of ['empty_response', 'max_tokens', 'refusal', 'provider_error']) {
+  async function* incomplete() {
+    yield { type: 'text_delta', text: 'Partial answer' };
+    yield { type: 'truncated', reason, continued: false };
+    return 'done';
+  }
+  await assert.rejects(async () => {
+    for await (const event of agentEvents(new AgentStream(incomplete(), () => {}))) {}
+  }, error => error instanceof IncompleteResponseError && error.reason === reason);
+}
+async function* continued() {
+  yield { type: 'truncated', reason: 'max_tokens', continued: true };
+  yield { type: 'text_delta', text: 'Finished' };
+  return 'done';
+}
+const recovered = [];
+for await (const event of agentEvents(new AgentStream(continued(), () => {}))) recovered.push(event.type);
+assert.deepEqual(recovered, ['truncated', 'text_delta']);
+await new Promise(resolve => setTimeout(resolve, 25));
+assert.deepEqual(unhandled, [], 'terminal truncations do not cause unhandled rejections');
 // Regression: a request that stopped hearing back from the model waited forever with no word to the user.
 {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));

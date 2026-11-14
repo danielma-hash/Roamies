@@ -1,9 +1,22 @@
 // gg-agent also rejects a stream's result promise when a request fails. Nothing awaits it while we iterate,
 // so Node treats it as unhandled and exits. The error still reaches the caller through the events.
-export function agentEvents(stream) {
+export class IncompleteResponseError extends Error {
+  constructor(reason) {
+    super('המודל עצר לפני שסיים. לא ניתן לאשר שהמשימה הושלמה.');
+    this.name = 'IncompleteResponseError';
+    this.reason = reason;
+  }
+}
+
+export async function* agentEvents(stream) {
   const events = stream[Symbol.asyncIterator](); // claim the events first so then() doesn't drain them
   stream.then(undefined, () => {});
-  return events;
+  for await (const event of events) {
+    if (event.type === 'truncated' && event.continued === false) {
+      throw new IncompleteResponseError(event.reason);
+    }
+    yield event;
+  }
 }
 
 /** Calls onStall once nothing has arrived for `ms`. A tool running (it may be waiting on the user) pauses it. */
