@@ -34,7 +34,8 @@ let me = ProcessInfo.processInfo.processIdentifier
 let myParent = getppid()
 // Never point at Roamies itself (its overlay windows cover every screen).
 func isRoamies(_ pid: pid_t) -> Bool {
-    pid == me || pid == myParent || NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.kenkai.roamies"
+    let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+    return pid == me || pid == myParent || bundle == "com.kenkai.roamies" || bundle == "com.ipracticom.roamies.preview"
 }
 
 // ---------- windows ----------
@@ -1519,6 +1520,22 @@ case "trusted":
 case "windows":
     let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
     out(["ok": true, "windows": windows().prefix(30).map { var i = winInfo($0); if $0.pid == front { i["frontApp"] = true }; return i }])
+
+// The alternate desktop driver must use this same native ownership/protected-app policy.
+// Never activates a window or asks for a privacy grant. Hidden/other-Space windows fail closed.
+case "desktop-policy":
+    guard (args.count == 2 || args.count == 3), let id = Int(args[1]),
+          let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+          session[kCGSessionOnConsoleKey as String] as? Bool == true,
+          session["CGSSessionScreenIsLocked"] as? Bool != true,
+          let w = windows().first(where: { $0.id == id && (args.count == 2 || $0.pid == Int32(args[2])) }),
+          let app = NSRunningApplication(processIdentifier: w.pid),
+          let bundle = app.bundleIdentifier, let launch = app.launchDate else {
+        fail("The desktop is locked, the window is hidden, or its owner changed.")
+    }
+    out(["ok": true, "windowId": id, "pid": w.pid, "bundle": bundle, "app": w.app,
+         "instance": "\(w.pid):\(launch.timeIntervalSince1970)", "title": w.title,
+         "protected": handsOff(w.pid) != nil, "trusted": AXIsProcessTrusted()])
 
 // Where the user is right now, for each message's live state: the app in front (never Roamies), its focused
 // window's title, and for a browser the page's address. Accessibility for the title and address; the window list
