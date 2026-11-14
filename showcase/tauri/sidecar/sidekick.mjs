@@ -78,6 +78,8 @@ import { WorkspaceController } from './workspace-controller.ts';
 import { AsmMemoryService } from './asm-memory.service.ts';
 import { createAsmTool } from './asm-tool.ts';
 import { createAsmRecordTool } from './asm-record-tool.ts';
+import { ArtifactService } from './artifact.service.ts';
+import { createArtifactTool } from './artifact-tool.ts';
 import { createWorkspaceTools } from './workspace-tools.ts';
 import { query as claudeSessionQuery } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeRunService } from './claude-run.service.ts';
@@ -1448,6 +1450,7 @@ setInterval(() => {
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 tools.push(createAsmTool(asmMemory));
 tools.push(createAsmRecordTool(asmMemory));
+tools.push(createArtifactTool(new ArtifactService({allowed:()=>!!config.allowActions&&!recipeReadOnly})));
 const livePanels = new LivePanelService(new LivePanelStoreService(path.join(workspaceData, 'live-panels.json')));
 let livePanelError;
 await livePanels.initialize().catch((error) => { livePanelError = error.message; });
