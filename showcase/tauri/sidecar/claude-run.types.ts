@@ -1,5 +1,6 @@
 import type { Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeRunJournal } from './claude-run-journal.js';
+import type { ProjectContextReceipt } from './project-context.types.js';
 
 export type ClaudeRunState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'failed' | 'interrupted';
 export interface ClaudeRunSnapshot {
@@ -12,6 +13,7 @@ export interface ClaudeRunSnapshot {
   readonly error?: string;
   readonly updatedAt?: number;
   readonly recoveryInstructions?: readonly string[];
+  readonly projectContext?: ProjectContextReceipt;
 }
 export interface ClaudeRunOptions {
   readonly journal?: ClaudeRunJournal;
