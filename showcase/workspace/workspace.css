@@ -88,3 +88,8 @@ section.live-board { display: block; }
 .live-flow-arrow { fill: #87a8ab; }
 .live-connections { font-size: 13px; color: #a9b7c3; padding-inline-start: 20px; }
 @media (max-width: 700px) { .live-grid { grid-template-columns: 1fr; gap: 14px; } .live-block { padding: 16px; } .live-lane { flex-basis: 100%; } .live-block th,.live-block td { padding: 10px; } }
+
+.panel-library { margin-block-end: 24px; display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.panel-library label { display: grid; gap: 7px; min-width: 220px; font-size: 13px; }
+.panel-library select { font: inherit; color: inherit; background: #172029; border: 1px solid var(--line); border-radius: 10px; padding: 10px; max-width: 100%; }
+.panel-library p { font-size: 12px; color: var(--muted); }

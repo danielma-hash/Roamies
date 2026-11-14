@@ -3,3 +3,5 @@ import type { livePanelSpecSchema,livePanelEnvelopeSchema,liveBlockSchema } from
 export type LivePanelSpec=z.infer<typeof livePanelSpecSchema>;
 export type LivePanelEnvelope=z.infer<typeof livePanelEnvelopeSchema>;
 export type LiveBlock=z.infer<typeof liveBlockSchema>;
+
+export type LivePanelArchive = z.infer<typeof import('./live-panel.schema.js').livePanelArchiveSchema>;

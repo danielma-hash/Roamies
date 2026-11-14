@@ -15,7 +15,7 @@ export class LivePanelView {
   const panel=parsed.data;if(this.current?.id===panel.id&&this.current.revision===panel.revision)return false;
   this.current=panel;const header=el('header');const titles=el('div');titles.append(el('p','JARVIS / מסך עבודה','eyebrow'),el('h1',panel.spec.title));
   if(panel.spec.subtitle)titles.append(el('p',panel.spec.subtitle,'live-subtitle'));header.append(titles);
-  const meta=el('p',`נוצר ב־${new Date(panel.createdAt).toLocaleString('he-IL')}`,'freshness');
+  const meta=el('p',`גרסה ${panel.revision} · עודכן ב־${new Date(panel.updatedAt??panel.createdAt).toLocaleString('he-IL')}`,'freshness');
   const grid=el('div','','live-grid');for(const block of panel.spec.blocks)grid.append(this.block(block,panel.id));
   const source=el('p',panel.spec.sourceNote??'המידע מוצג כפי שנמסר. המסך אינו מתרענן ממקור חיצוני.','live-source');
   this.root.replaceChildren(header,meta,grid,source);return true;

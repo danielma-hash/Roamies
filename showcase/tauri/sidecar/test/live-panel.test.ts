@@ -27,7 +27,7 @@ it('does not expose mutable service state or claim display verification from a s
 });
 
 it('accepts only a receipt for the current panel revision and cancels waits when replaced',async()=>{
- const service=new LivePanelService();expect(service.markRendered(undefined,undefined)).toBe(false);const first=service.show(spec);const waiting=service.waitForRender(first.id);
- expect(service.markRendered(first.id,2)).toBe(false);const next=service.show(spec);expect(await waiting).toBe(false);
- expect(service.markRendered(first.id,1)).toBe(false);const current=service.waitForRender(next.id);expect(service.markRendered(next.id,1)).toBe(true);expect(await current).toBe(true);
+ const service=new LivePanelService();expect(service.markRendered(undefined,undefined)).toBe(false);const first=await service.show(spec);const waiting=service.waitForRender(first.id);
+ expect(service.markRendered(first.id,2)).toBe(false);const next=await service.show(spec);expect(await waiting).toBe(false);
+ expect(service.markRendered(first.id,1)).toBe(false);expect(await service.waitForRender(next.id,undefined,2)).toBe(false);const current=service.waitForRender(next.id);expect(service.markRendered(next.id,1)).toBe(true);expect(await current).toBe(true);
 });

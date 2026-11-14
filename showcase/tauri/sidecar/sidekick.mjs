@@ -13,7 +13,8 @@ import { DesktopProcessService } from './desktop-process.service.ts';
 import { BrowserControlsService } from './browser-controls.service.ts';
 import { createBrowserControlTools } from './browser-control-tools.ts';
 import { LivePanelService } from './live-panel.service.ts';
-import { createLivePanelTool } from './live-panel-tool.ts';
+import { LivePanelStoreService } from './live-panel-store.service.ts';
+import { createLivePanelTool, createSavedPanelTools } from './live-panel-tool.ts';
 import { CapabilityRegistry } from './capability-registry.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
 import { localDockerProcess } from './docker-process.service.ts';
@@ -1383,8 +1384,12 @@ setInterval(() => {
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
-const livePanels = new LivePanelService();
-tools.push(createLivePanelTool(livePanels, () => { send({ type: 'session_center_show' }); panel(); }));
+const livePanels = new LivePanelService(new LivePanelStoreService(path.join(workspaceData, 'live-panels.json')));
+let livePanelError;
+await livePanels.initialize().catch((error) => { livePanelError = error.message; });
+let livePanelFocus = false;
+const showLivePanel = () => { livePanelFocus = true; send({ type: 'session_center_show' }); panel(); };
+tools.push(createLivePanelTool(livePanels, showLivePanel), ...createSavedPanelTools(livePanels, showLivePanel));
 const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
 const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
 speech.setPronunciationDictionary((text) => pronunciation.apply(text));
@@ -1407,7 +1412,8 @@ function panel() {
     panelQueued = false;
     if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } });
     if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error, approval: sessionApproval.current() } } });
-    if (sessionCenterOpen && livePanels.snapshot()) send({ type: 'session_center', msg: { kind: 'live_panel', panel: livePanels.snapshot() } });
+    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'live_panel_library', selectedId: livePanels.snapshot()?.id, panels: livePanels.list(), error: livePanelError } });
+    if (sessionCenterOpen && livePanels.snapshot()) { send({ type: 'session_center', msg: { kind: 'live_panel', panel: livePanels.snapshot(), focus: livePanelFocus } }); livePanelFocus = false; }
   });
 }
 const panelNote = (text, bad = false, p = null) => {
@@ -1884,6 +1890,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'saved_panel_open' && typeof m.id === 'string') { livePanels.open(m.id).then(() => { livePanelError = undefined; showLivePanel(); }).catch((error) => { livePanelError = error.message; panel(); }); }
   else if (m.type === 'live_panel_rendered') livePanels.markRendered(m.id, m.revision);
   else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
   else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionApproval.cancel(); }
@@ -1959,7 +1966,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (busy) syncSession();
   closeSpare();
   claudeRuns.close();
-  Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
+  Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), livePanels.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });
 
 // Retired sign-ins (Claude from before Claude Code, the old ChatGPT, Kimi, Grok and Google ones) no longer work:

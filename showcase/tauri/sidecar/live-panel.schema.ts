@@ -30,4 +30,17 @@ export const livePanelSpecSchema = z.strictObject({title,subtitle:z.string().max
  }
  if(nodes>1000)ctx.addIssue({code:'custom',message:'המסך מכיל יותר מדי רכיבים.'});
 });
-export const livePanelEnvelopeSchema = z.strictObject({id:z.uuid(),revision:z.number().int().positive(),createdAt:z.iso.datetime(),spec:livePanelSpecSchema});
+export const livePanelEnvelopeSchema = z.strictObject({id:z.uuid(),revision:z.number().int().positive().max(Number.MAX_SAFE_INTEGER),createdAt:z.iso.datetime(),updatedAt:z.iso.datetime().optional(),spec:livePanelSpecSchema});
+
+export const livePanelArchiveSchema = z.strictObject({
+ version:z.literal(1), selectedId:z.uuid().optional(),
+ panels:z.array(z.array(livePanelEnvelopeSchema).min(1).max(5)).max(20),
+}).superRefine((archive,ctx)=>{
+ const ids=new Set<string>();
+ for(const history of archive.panels){
+  const first=history[0]!;
+  if(ids.has(first.id)||history.some((entry,i)=>entry.id!==first.id||entry.createdAt!==first.createdAt||i>0&&entry.revision!==history[i-1]!.revision+1))ctx.addIssue({code:'custom',message:'היסטוריית מסך אינה תקינה.'});
+  ids.add(first.id);
+ }
+ if(archive.selectedId&&!ids.has(archive.selectedId))ctx.addIssue({code:'custom',message:'המסך הנבחר אינו קיים.'});
+});

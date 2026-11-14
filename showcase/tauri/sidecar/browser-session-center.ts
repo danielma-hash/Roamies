@@ -1,3 +1,4 @@
+import { PanelLibraryView } from './browser-panel-library.js';
 import { LivePanelView } from './browser-live-panel.js';
 import { renderClaudeControl, renderClaudeInstruction } from './browser-claude-control.js';
 import type { ClaudeControlAction } from './browser-claude-control.js';
@@ -170,9 +171,17 @@ if (root && invoke) {
     tab.addEventListener('keydown', (event) => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 'sessions' : event.key === 'End' ? 'panels' : name === 'sessions' ? 'panels' : 'sessions'; select(next); tabs.querySelector<HTMLButtonElement>(`[data-view=${next}]`)?.focus(); });
   }
   root.append(tabs, sessions, panels); select('sessions');
-  const view = new SessionCenterView(sessions, invoke, store); const live = new LivePanelView(panels);
+  const view = new SessionCenterView(sessions, invoke, store);
+  const libraryRoot = node('div'); const displayRoot = node('div'); panels.append(libraryRoot, displayRoot);
+  const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }));
+  const live = new LivePanelView(displayRoot);
   window.__sessionCenter = (message) => {
-    if (record(message) && message.kind === 'live_panel') { if (live.receive(message.panel)) { select('panels'); const receipt = live.receipt(); if (receipt) requestAnimationFrame(() => { void invoke('sidecar_send', { msg: { type: 'live_panel_rendered', ...receipt } }).catch(() => {}); }); } }
+    if (record(message) && message.kind === 'live_panel_library') library.receive(message);
+    else if (record(message) && message.kind === 'live_panel') {
+      if (live.receive(message.panel) || message.focus === true) select('panels');
+      const receipt = live.receipt();
+      if (!panels.hidden && receipt && record(message.panel) && receipt.id === message.panel.id && receipt.revision === message.panel.revision) requestAnimationFrame(() => { void invoke('sidecar_send', { msg: { type: 'live_panel_rendered', ...receipt } }).catch(() => {}); });
+    }
     else { view.receive(message); if (record(message) && record(message.snapshot) && message.snapshot.approval) select('sessions'); }
   };
   void invoke('sidecar_send', { msg: { type: 'session_center_open' } });
