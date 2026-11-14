@@ -5,6 +5,13 @@ import type {LivePanelEnvelope} from '../live-panel.types.js';
 const panel:LivePanelEnvelope={id:'12345678-1234-4567-8901-123456789abc',revision:1,createdAt:'2026-11-14T08:00:00Z',spec:{title:'חי',blocks:[{kind:'query',id:'sessions',title:'סשנים',source:'sessions'}]}};
 const table=():LiveQueryTable=>({columns:['שם'],rows:[['בדיקה']],rowIds:['id'],observedAt:Date.now(),source:'fixture'});
 afterEach(()=>vi.useRealTimers());
+it('replays paused state after the restored panel mounts without reading its source',async()=>{
+ vi.useFakeTimers();const read=vi.fn(async()=>table());const messages:LiveQueryMessage[]=[];
+ const service=new LiveQueryService(read,m=>messages.push(m),()=>false);
+ service.activate(panel,false);messages.length=0; // initial event arrived before the WebView mounted
+ service.activate(panel,true);expect(messages).toHaveLength(1);expect(messages[0]).toMatchObject({status:'paused',panelId:panel.id});
+ expect(messages[0]?.table).toBeUndefined();await vi.advanceTimersByTimeAsync(60_000);expect(read).not.toHaveBeenCalled();service.close();
+});
 it('polls without model calls only while visible, with a source-wide minimum interval',async()=>{
  vi.useFakeTimers();const read=vi.fn(async()=>table());const messages:LiveQueryMessage[]=[];const service=new LiveQueryService(read,m=>messages.push(m),()=>true);
  service.activate(panel,false);await vi.advanceTimersByTimeAsync(60_000);expect(read).not.toHaveBeenCalled();
