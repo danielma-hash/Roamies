@@ -38,7 +38,7 @@ import { createBrowserTools } from './browser-tools.ts';
 import { createDesktopTools } from './desktop-tools.ts';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
 import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
-import { agentEvents, stallWatch } from './agentstream.mjs';
+import { agentEvents, stallWatch, IncompleteResponseError } from './agentstream.mjs';
 import {
   AUTH_PROVIDERS, AuthStorage, OPENAI_CHATGPT_KEY, apiKeyStorageKeys, claudeCodeEnv, dualAuthProvider, getAuthStorageKeys, getContextWindow, getDefaultModel, getModel,
   getModelsForProvider, loginChatGPT, resolveClaudeCodeBinary, signInWithClaudeCode, storageKeyProvider,
@@ -1005,7 +1005,7 @@ async function prompt(text, image = null, note = '', byVoice = false, taskId) {
     if (controller.signal.aborted) voice?.abort(); else { spoken?.flush(); voice?.end(); }
     if (controller.signal.aborted && quiet) ui({ kind: 'agent', e: { type: 'done' } });
     else {
-      const msg = err instanceof TaskRunError || err instanceof TaskBudgetError ? err.message : stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
+      const msg = err instanceof TaskRunError || err instanceof TaskBudgetError || err instanceof IncompleteResponseError ? err.message : stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
       console.error('prompt failed', err);
       ui({ kind: 'agent', e: { type: 'error', message: msg, speech: voice?.id ?? null } });
     }
