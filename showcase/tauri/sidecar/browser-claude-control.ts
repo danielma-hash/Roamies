@@ -1,4 +1,5 @@
 import type { ClaudeRunSnapshot, ClaudeRunState } from './claude-run.types.js';
+import type { DraftStorage } from './session-view.types.js';
 export interface ClaudeControlAction {
   readonly type: 'workspace';
   readonly action: 'claude_control_start' | 'claude_control_send' | 'claude_control_resume' | 'claude_control_stop';
@@ -11,29 +12,29 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLE
   const node = document.createElement(tag); node.className = 'workspace-' + (tag === 'article' ? 'session' : 'control');
   if (text) node.textContent = text; return node;
 }
-function field(label: string, key: string, area = false): { label: HTMLLabelElement; input: HTMLInputElement | HTMLTextAreaElement } {
+function field(label: string, key: string, area = false, storage: DraftStorage = drafts): { label: HTMLLabelElement; input: HTMLInputElement | HTMLTextAreaElement } {
   const wrapper = el('label', label); const input = area ? el('textarea') : el('input');
-  input.dir = 'auto'; input.maxLength = area ? 12_000 : 4096; input.required = true; input.value = drafts.get(key) ?? '';
-  input.addEventListener('input', () => { drafts.set(key, input.value); if (drafts.size > 200) drafts.delete(drafts.keys().next().value!); });
+  input.dir = 'auto'; input.maxLength = area ? 12_000 : 4096; input.required = true; input.value = storage.get(key) ?? '';
+  input.addEventListener('input', () => { storage.set(key, input.value); if (drafts.size > 200) drafts.delete(drafts.keys().next().value!); });
   wrapper.append(input); return { label: wrapper, input };
 }
 function button(label: string, action: () => void): HTMLButtonElement {
   const node = el('button', label); node.type = 'button'; node.className = 'workspace-button'; node.addEventListener('pointerdown', (event) => event.preventDefault());
   node.addEventListener('click', () => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); action(); }); return node;
 }
-export function renderClaudeInstruction(id: string, title: string, action: 'claude_control_resume' | 'claude_control_send', send: (action: ClaudeControlAction) => void): HTMLElement {
+export function renderClaudeInstruction(id: string, title: string, action: 'claude_control_resume' | 'claude_control_send', send: (action: ClaudeControlAction) => void, storage: DraftStorage = drafts): HTMLElement {
   const form = el('form'); form.setAttribute('aria-label', `הוראה לסשן ${title}`);
-  const text = field('ההוראה ל־Claude', id, true); form.append(text.label);
+  const text = field('ההוראה ל־Claude', id, true, storage); form.append(text.label);
   const submit = button(action === 'claude_control_resume' ? 'המשך עם ג׳ארוויס' : 'שליחת הוראה', () => {
     if (text.input.value.trim()) send({ type: 'workspace', action, id, instruction: text.input.value.trim() });
   }); form.append(submit); form.addEventListener('submit', (event) => { event.preventDefault(); submit.click(); }); return form;
 }
-export function renderClaudeControl(runs: readonly ClaudeRunSnapshot[], send: (action: ClaudeControlAction) => void): HTMLElement {
+export function renderClaudeControl(runs: readonly ClaudeRunSnapshot[], send: (action: ClaudeControlAction) => void, storage: DraftStorage = drafts): HTMLElement {
   const section = el('section'); section.setAttribute('aria-label', 'שליטה בסשני Claude');
   section.append(el('h3', 'סשנים בניהול ג׳ארוויס'), el('p', 'אפשר לפתוח סשן, לשלוח הוראות, לעצור ולהמשיך בקול. סשן שפתוח בטרמינל צריך להיסגר שם לפני המשך כאן. עצירה שומרת את ההיסטוריה ומבטלת הוראות שממתינות בתור.'));
   const details = el('details'); details.open = newSessionOpen; details.addEventListener('toggle', () => { if (details.isConnected) newSessionOpen = details.open; }); details.append(el('summary', 'פתיחת סשן חדש'));
-  const form = el('form'); const cwd = field('תיקיית פרויקט מלאה', 'new.cwd'); const title = field('שם הסשן', 'new.title'); title.input.maxLength = 160;
-  const instruction = field('ההוראה הראשונה', 'new.instruction', true);
+  const form = el('form'); const cwd = field('תיקיית פרויקט מלאה', 'new.cwd', false, storage); const title = field('שם הסשן', 'new.title', false, storage); title.input.maxLength = 160;
+  const instruction = field('ההוראה הראשונה', 'new.instruction', true, storage);
   const start = el('button', 'פתיחה עם ג׳ארוויס'); start.type = 'submit'; start.className = 'workspace-button';
   start.addEventListener('pointerdown', (event) => event.preventDefault());
   form.append(cwd.label, title.label, instruction.label, start);
@@ -53,7 +54,7 @@ export function renderClaudeControl(runs: readonly ClaudeRunSnapshot[], send: (a
       for (const instruction of run.recoveryInstructions) { const text = el('p', instruction); text.dir = 'auto'; text.dataset.userContent = ''; recovery.append(text); }
       card.append(recovery);
     }
-    card.append(renderClaudeInstruction(run.id, run.title, ended ? 'claude_control_resume' : 'claude_control_send', send));
+    card.append(renderClaudeInstruction(run.id, run.title, ended ? 'claude_control_resume' : 'claude_control_send', send, storage));
     if (!ended) card.append(button('עצירת הסשן וביטול התור', () => send({ type: 'workspace', action: 'claude_control_stop', id: run.id })));
     section.append(card);
   }
