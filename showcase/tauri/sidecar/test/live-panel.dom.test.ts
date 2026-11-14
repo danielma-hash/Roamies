@@ -52,3 +52,14 @@ it('updates live rows without remounting the filter, and ignores an obsolete pan
  expect(root.querySelector('input[type=search]')).toBe(filter);expect(root.querySelectorAll('tbody tr')).toHaveLength(1);expect(root.querySelector('tbody')?.textContent).toBe('Alpha updated');
  expect(view.receiveQuery({...message,revision:2})).toBe(false);view.receiveQuery({...message,status:'paused',table:undefined});expect(root.querySelector('table')).toBeNull();expect(root.textContent).toContain('מושהה');
 });
+
+it('acknowledges the actual filtered row refs and opens the exact session from a row',async()=>{
+ const ackCalls:{viewId:string;refs:string[]}[]=[];let opened='';const root=document.createElement('main');document.body.append(root);
+ const view=new LivePanelView(root,undefined,{ack:(viewId,refs)=>{ackCalls.push({viewId,refs});},openSession:id=>{opened=id;}});
+ view.receive({...panel,spec:{title:'חי',blocks:[{kind:'query',id:'q',title:'סשנים',source:'sessions'}]}});
+ const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
+ const binding={viewId:panel.id,rows:[{ref:first,targetId:first,actions:['stop']},{ref:second,targetId:second,actions:['stop']}]};
+ view.receiveQuery({kind:'live_query',panelId:panel.id,revision:1,blockId:'q',status:'ready',binding,table:{columns:['שם'],rows:[['Alpha'],['Beta']],rowIds:[first,second],observedAt:Date.now(),source:'fixture'}});
+ const filter=root.querySelector<HTMLInputElement>('input[type=search]')!;filter.value='Beta';filter.dispatchEvent(new Event('input',{bubbles:true}));
+ await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));expect(ackCalls.at(-1)?.refs).toEqual([second]);root.querySelector<HTMLButtonElement>('tbody button')!.click();expect(opened).toBe(second);
+});

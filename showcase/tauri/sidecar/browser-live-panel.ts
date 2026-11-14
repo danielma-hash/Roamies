@@ -1,3 +1,4 @@
+import type {PanelViewBinding} from './panel-action.types.js';
 import {liveQueryMessageSchema} from './live-query.schema.js';
 import type {PanelViewStateService} from './panel-view-state.service.js';
 import { livePanelEnvelopeSchema } from './live-panel.schema.js';
@@ -10,8 +11,8 @@ const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,
 /** Closed component catalog. All model strings are text, never DOM markup or executable attributes. */
 export class LivePanelView {
  private current?:LivePanelEnvelope;
- private readonly queryViews=new Map<string,{status:HTMLElement;content:HTMLElement;signature?:string;update?: (rows:(string|number|boolean)[][])=>void}>();
- constructor(private readonly root:HTMLElement,private readonly state?:PanelViewStateService){root.classList.add('live-panel-root');root.append(el('h1','המסך הבא מתחיל בבקשה שלך'),el('p','אפשר לבקש מג׳ארוויס טבלת השוואה, גרף, לוח עבודה או תרשים.','freshness'));}
+ private readonly queryViews=new Map<string,{status:HTMLElement;content:HTMLElement;signature?:string;update?: (rows:(string|number|boolean)[][],binding?:PanelViewBinding)=>void}>();
+ constructor(private readonly root:HTMLElement,private readonly state?:PanelViewStateService,private readonly interactions?:{ack:(viewId:string,refs:string[])=>void;openSession:(id:string)=>void}){root.classList.add('live-panel-root');root.append(el('h1','המסך הבא מתחיל בבקשה שלך'),el('p','אפשר לבקש מג׳ארוויס טבלת השוואה, גרף, לוח עבודה או תרשים.','freshness'));}
  receive(input:unknown):boolean {
   const parsed=livePanelEnvelopeSchema.safeParse(input);
   if(!parsed.success)return false;
@@ -31,8 +32,8 @@ export class LivePanelView {
   view.status.textContent=`${labels[message.status]}${message.table?` · ${message.table.source} · ${new Date(message.table.observedAt).toLocaleString('he-IL')}`:''}${message.error?` · ${message.error}`:''}`;
   if(message.table){
    const signature=JSON.stringify(message.table.columns);
-   if(view.signature!==signature){view.content.replaceChildren();view.update=this.table(view.content,{kind:'table',id:message.blockId,title:'נתונים חיים',columns:message.table.columns,rows:message.table.rows},message.panelId);view.signature=signature;}
-   else view.update?.(message.table.rows);
+   if(view.signature!==signature){view.content.replaceChildren();view.update=this.table(view.content,{kind:'table',id:message.blockId,title:'נתונים חיים',columns:message.table.columns,rows:message.table.rows},message.panelId,message.binding);view.signature=signature;}
+   else view.update?.(message.table.rows,message.binding);
   }else{view.content.replaceChildren();view.signature=undefined;view.update=undefined;}
   return true;
  }
@@ -54,14 +55,25 @@ export class LivePanelView {
   if(block.kind==='flow')this.flow(section,block,panelId);
   return section;
  }
- private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>,panelId:string):(rows:(string|number|boolean)[][])=>void {
+ private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>,panelId:string,initialBinding?:PanelViewBinding):(rows:(string|number|boolean)[][],binding?:PanelViewBinding)=>void {
   const search=el('input');search.type='search';search.placeholder='סינון הטבלה';search.maxLength=100;search.setAttribute('aria-label',`סינון ${block.title}`);search.dir='auto';
   const signature=JSON.stringify(['table',block.columns]);search.value=this.state?.read(panelId,block.id,signature)?.query?.slice(0,100)??'';
   const saved=el('p',this.state?.error??'','freshness');saved.setAttribute('role','status');
   const scroller=el('div','','live-table-scroll');const table=el('table');const head=el('thead');const row=el('tr');for(const title of block.columns){const cell=el('th',title);cell.scope='col';cell.dir='auto';row.append(cell);}head.append(row);
   const body=el('tbody');table.append(head,body);scroller.append(table);const count=el('p','','freshness');count.setAttribute('role','status');
-  let data=block.rows;const render=():void=>{const query=search.value.toLocaleLowerCase();const rows=data.filter(values=>values.some(value=>cellText(value).toLocaleLowerCase().includes(query)));body.replaceChildren();for(const values of rows){const row=el('tr');for(const value of values){const cell=el('td',cellText(value));cell.dir='auto';row.append(cell);}body.append(row);}count.textContent=`${rows.length} מתוך ${data.length} שורות`;};
-  search.addEventListener('input',()=>{render();this.state?.save(panelId,block.id,signature,{query:search.value.slice(0,100)});saved.textContent=this.state?.error??'';});section.append(search,scroller,count,saved);render();return (rows)=>{data=rows;render();};
+  let data=block.rows;let binding=initialBinding;const actionHead=el('th','ניהול');actionHead.scope='col';
+  const render=():void=>{
+   const query=search.value.toLocaleLowerCase();const rows=data.map((values,index)=>({values,index})).filter(item=>item.values.some(value=>cellText(value).toLocaleLowerCase().includes(query)));body.replaceChildren();
+   if(binding){if(!actionHead.parentElement)row.append(actionHead);}else actionHead.remove();
+   const visible:string[]=[];
+   for(const item of rows){const row=el('tr');for(const value of item.values){const cell=el('td',cellText(value));cell.dir='auto';row.append(cell);}
+    const target=binding?.rows[item.index];
+    if(target){visible.push(target.ref);const cell=el('td');const manage=el('button','ניהול הסשן');manage.type='button';manage.addEventListener('click',()=>this.interactions?.openSession(target.targetId));cell.append(manage);row.append(cell);}body.append(row);
+   }
+   count.textContent=`${rows.length} מתוך ${data.length} שורות`;
+   if(binding&&this.interactions){const viewId=binding.viewId;requestAnimationFrame(()=>{if(body.isConnected&&!this.root.closest('[hidden]')&&!document.hidden&&binding?.viewId===viewId)this.interactions?.ack(viewId,visible);});}
+  };
+  search.addEventListener('input',()=>{render();this.state?.save(panelId,block.id,signature,{query:search.value.slice(0,100)});saved.textContent=this.state?.error??'';});section.append(search,scroller,count,saved);render();return (rows,nextBinding)=>{data=rows;binding=nextBinding;render();};
  }
  private form(section:HTMLElement,block:Extract<LiveBlock,{kind:'form'}>,panelId:string):void {
   const form=el('form');const inputs=new Map<string,HTMLInputElement|HTMLSelectElement>();
