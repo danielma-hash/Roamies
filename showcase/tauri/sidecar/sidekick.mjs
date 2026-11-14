@@ -7,6 +7,7 @@
 import { Agent } from '@kenkaiiii/gg-agent';
 import { z } from 'zod';
 import { ScopedApprovalService } from './scoped-approval.service.ts';
+import { WebReaderService } from './web-reader.service.ts';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
 import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
 import { agentEvents, stallWatch } from './agentstream.mjs';
@@ -268,7 +269,9 @@ let recipeReadOnly = false;
 // ---------- tools ----------
 // The open request's voice, if replies are spoken: draw's beat lines are said on it, in order with the reply.
 let turnVoice = null;
+const webReader = new WebReaderService();
 const { tools, hands, whereNow, ink, nextTurn } = createTools({
+  webRead: (args, signal) => webReader.read(args, signal),
   allowActions: () => config.allowActions && !recipeReadOnly, ui, ask, openUrl, userName,
   speak: (line) => { if (!turnVoice) return false; turnVoice.say(line); return true; },
   onHandoff: (task) => { activity.handoff(task); panel(); },
