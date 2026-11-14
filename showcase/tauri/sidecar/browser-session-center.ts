@@ -2,6 +2,7 @@ import { renderClaudeControl, renderClaudeInstruction } from './browser-claude-c
 import type { ClaudeControlAction } from './browser-claude-control.js';
 import { sessionAction, sessionRows, SESSION_LABELS } from './session-center.model.js';
 import type { SessionCenterSnapshot, SessionFilter } from './session-center.types.js';
+import { SessionViewStore } from './session-view-store.js';
 
 type Request = ClaudeControlAction | { readonly type: 'workspace'; readonly action: 'sessions.list'; readonly query: string };
 type Invoke = (command: string, args: { readonly msg: unknown }) => Promise<unknown>;
@@ -30,22 +31,31 @@ export class SessionCenterView {
   private readonly pending = new Set<string>();
   private readonly requests = new Map<string, string>();
 
-  constructor(private readonly root: HTMLElement, private readonly invoke: Invoke) {
+  constructor(private readonly root: HTMLElement, private readonly invoke: Invoke, private readonly store: SessionViewStore) {
+    const saved = store.snapshot(); this.selected = saved.selected; this.filter = saved.filter; this.search.value = saved.query;
     const header = node('header'); const brand = node('div');
     brand.append(node('p', 'JARVIS / מרחב העבודה', 'eyebrow'), node('h1', 'כל העבודה, במקום אחד'), this.freshness);
     const actions = node('div', '', 'header-actions');
-    actions.append(button('סשן חדש', () => { this.selected = 'new'; this.renderDetail(); }), button('רענון', () => { void this.send({ type: 'workspace', action: 'sessions.list', query: '' }); }));
+    actions.append(button('סשן חדש', () => { this.selected = 'new'; this.persistView(); this.renderDetail(); }), button('רענון', () => { void this.send({ type: 'workspace', action: 'sessions.list', query: '' }); }));
     header.append(brand, actions); this.notice.setAttribute('role', 'status');
     this.list.setAttribute('aria-label', 'סשנים'); this.detail.setAttribute('aria-label', 'פרטי הסשן');
     this.search.type = 'search'; this.search.placeholder = 'חיפוש לפי שיחה או פרויקט'; this.search.maxLength = 200;
     this.search.setAttribute('aria-label', 'חיפוש סשנים'); this.search.dir = 'auto';
-    this.search.addEventListener('input', () => this.renderList());
+    this.search.addEventListener('input', () => { this.persistView(); this.renderList(); });
+    root.addEventListener('input', () => { const error = this.store.error(); if (error) this.notice.textContent = error; });
     const sidebar = node('aside'); sidebar.append(this.search, this.filters, this.list);
     const layout = node('div', '', 'session-layout'); layout.append(sidebar, this.detail);
     root.append(header, this.counts, this.notice, layout);
     for (const [id, title] of [['all', 'הכול'], ['active', 'עובדים'], ['attention', 'דורשים תשומת לב'], ['interrupted', 'להמשך'], ['history', 'היסטוריה']] as const) {
-      const el = button(title, () => { this.filter = id; this.renderList(); }); el.dataset.filter = id; this.filters.append(el);
+      const el = button(title, () => { this.filter = id; this.persistView(); this.renderList(); }); el.dataset.filter = id; this.filters.append(el);
     }
+    let clearing = false;
+    const clear = button('ניקוי טיוטות מקומיות', () => {
+      if (!clearing) { clearing = true; clear.textContent = 'לחץ שוב למחיקת הטיוטות'; return; }
+      this.store.clearDrafts(); this.detailKey = ''; this.renderDetail(); clearing = false; clear.textContent = 'ניקוי טיוטות מקומיות';
+      this.notice.textContent = this.store.error() ?? 'הטיוטות נמחקו. ההיסטוריה וההתקדמות נשמרו.';
+    });
+    sidebar.append(node('p', 'התצוגה ו־50 הטיוטות האחרונות נשמרות במק. הן לא נשלחות עד לבחירת פעולה.', 'freshness'), clear);
     this.renderList(); this.renderDetail();
   }
 
@@ -55,10 +65,10 @@ export class SessionCenterView {
       // Payload originates in the local sidecar. Native bridge projects it before delivery.
       this.state = message.snapshot as unknown as SessionCenterSnapshot;
       this.freshness.textContent = this.state.observedAt ? `החיבור עודכן ב־${new Date(this.state.observedAt).toLocaleTimeString('he-IL')}` : 'ממתין לתצפית ראשונה';
-      this.notice.textContent = this.state.error ?? (!this.state.actions ? 'צפייה זמינה. להפעלת סשנים יש להפעיל פעולות בהגדרות.' : '');
+      this.notice.textContent = this.store.error() ?? this.state.error ?? (!this.state.actions ? 'צפייה זמינה. להפעלת סשנים יש להפעיל פעולות בהגדרות.' : '');
       this.counts.replaceChildren(...(['active', 'attention', 'interrupted'] as const).map((filter) => {
         const label = { active: 'עובדים כעת', attention: 'מחכים לתשומת לב', interrupted: 'התקדמות שמורה' }[filter];
-        const el = button(`${sessionRows(this.state, filter, '').length} ${label}`, () => { this.filter = filter; this.renderList(); }); return el;
+        const el = button(`${sessionRows(this.state, filter, '').length} ${label}`, () => { this.filter = filter; this.persistView(); this.renderList(); }); return el;
       }));
       this.renderList(); this.renderDetail();
     } else if (message.kind === 'action_result' && typeof message.requestId === 'string') {
@@ -66,6 +76,11 @@ export class SessionCenterView {
       this.notice.textContent = typeof message.error === 'string' ? message.error : message.cancelled ? 'הפעולה בוטלה.' : 'ההוראה התקבלה. ההתקדמות תופיע כאן.';
       this.detail.querySelectorAll<HTMLButtonElement>('button').forEach((el) => { el.disabled = false; });
     } else if (message.kind === 'note' && typeof message.text === 'string') this.notice.textContent = message.text;
+  }
+
+  private persistView(): void {
+    this.store.update({ selected: this.selected, filter: this.filter, query: this.search.value });
+    const error = this.store.error(); if (error) this.notice.textContent = error;
   }
 
   private async send(request: Request): Promise<void> {
@@ -85,7 +100,7 @@ export class SessionCenterView {
     this.list.replaceChildren();
     if (!rows.length) this.list.append(node('p', this.state.observedAt ? 'אין סשנים בתצוגה הזאת.' : 'טוען את הסשנים…', 'empty'));
     for (const row of rows) {
-      const el = button('', () => { this.selected = row.id; this.renderList(); this.renderDetail(); }); el.dataset.session = row.id;
+      const el = button('', () => { this.selected = row.id; this.persistView(); this.renderList(); this.renderDetail(); }); el.dataset.session = row.id;
       el.setAttribute('aria-pressed', String(this.selected === row.id));
       const title = node('strong', row.title); title.dir = 'auto';
       const project = node('small', row.cwd.split('/').filter(Boolean).at(-1) ?? row.cwd); project.dir = 'auto';
@@ -96,7 +111,7 @@ export class SessionCenterView {
 
   private renderDetail(): void {
     if (this.selected === 'new') {
-      if (this.detailKey !== 'new') { this.detailKey = 'new'; this.detail.replaceChildren(renderClaudeControl([], (request) => { void this.send(request); })); this.detail.querySelector('details')?.setAttribute('open', ''); }
+      if (this.detailKey !== 'new') { this.detailKey = 'new'; this.detail.replaceChildren(renderClaudeControl([], (request) => { void this.send(request); }, this.store)); this.detail.querySelector('details')?.setAttribute('open', ''); }
       return;
     }
     const row = sessionRows(this.state, 'all', '').find((candidate) => candidate.id === this.selected);
@@ -104,7 +119,7 @@ export class SessionCenterView {
     const action = sessionAction(row); const key = `${row.id}:${action}`;
     if (this.detailKey !== key) {
       this.detailKey = key; this.detail.replaceChildren(node('h2', '', 'detail-title'), node('p', '', 'detail-status'), node('p', '', 'detail-project'), node('p', '', 'detail-error'), node('div', '', 'detail-recovery'), node('h3', 'התשובה האחרונה'), node('p', '', 'detail-reply'));
-      this.detail.append(renderClaudeInstruction(row.id, row.title, action, (request) => { void this.send(request); }));
+      this.detail.append(renderClaudeInstruction(row.id, row.title, action, (request) => { void this.send(request); }, this.store));
       if (action === 'claude_control_send') this.detail.append(button('עצירת הסשן וביטול התור', () => { void this.send({ type: 'workspace', action: 'claude_control_stop', id: row.id }); }));
     }
     const text = (selector: string, value: string): void => { const el = this.detail.querySelector<HTMLElement>(selector); if (el) { el.textContent = value; el.dir = 'auto'; } };
@@ -119,6 +134,7 @@ export class SessionCenterView {
 const root = document.getElementById('session-center');
 const invoke = window.__TAURI__?.core?.invoke;
 if (root && invoke) {
-  const view = new SessionCenterView(root, invoke); window.__sessionCenter = (message) => view.receive(message);
+  const store = new SessionViewStore({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
+  const view = new SessionCenterView(root, invoke, store); window.__sessionCenter = (message) => view.receive(message);
   void invoke('sidecar_send', { msg: { type: 'session_center_open' } });
 } else if (root) root.textContent = 'מרכז העבודה מתחבר מתוך אפליקציית Roamies.';
