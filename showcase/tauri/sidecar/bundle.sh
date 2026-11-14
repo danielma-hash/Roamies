@@ -18,6 +18,8 @@ rm -rf dist && mkdir -p dist/node_modules/@bokuweb
 "$ES" soniox-cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/soniox-cli.mjs \
   --banner:js="import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" \
   --log-level=warning
+"$ES" browser-egress-entry.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/browser-egress.mjs --log-level=warning
+printf '*\n!browser-egress.mjs\n' > dist/.dockerignore
 cp -R node_modules/@bokuweb/zstd-wasm dist/node_modules/@bokuweb/
 cp -R licenses dist/licenses
 "$ES" claude-events-entry.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/claude-events.mjs --external:@anthropic-ai/claude-agent-sdk --log-level=warning
