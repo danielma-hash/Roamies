@@ -20,6 +20,7 @@ import type { ConversationsWorkspaceState, ConversationsWorkspaceAction } from '
 
 export interface WorkspaceState {
   readonly managedSessions?: readonly ClaudeRunSnapshot[];
+  readonly managedSessionsError?: string;
   readonly sessions: readonly ClaudeSession[];
   readonly available: boolean;
   readonly message?: string;
@@ -90,6 +91,7 @@ export function render(state: WorkspaceState, send: (message: WorkspaceAction) =
     element('p', 'workspace-description', 'שיחות מקומיות, הודעות אחרונות והכנת המשך עבודה.'));
 
   root.append(renderClaudeControl(state.managedSessions ?? [], send));
+  if (state.managedSessionsError) { const error = element('p', 'workspace-feedback', state.managedSessionsError); error.setAttribute('role', 'alert'); root.append(error); }
   const form = element('form', 'workspace-search');
   const searchLabel = element('label', 'workspace-search-label', 'חיפוש שיחה או פרויקט');
   const search = element('input', 'workspace-search-input');

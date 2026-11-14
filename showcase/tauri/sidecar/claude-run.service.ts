@@ -18,6 +18,7 @@ interface Run {
   readonly input: ClaudeInputQueue; readonly query: Query; readonly abort: AbortController;
   readonly pending: string[];
   state: ClaudeRunState; lastReply: string; error?: string; done?: Promise<void>;
+  currentInstruction?: string; updatedAt: number;
 }
 const TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 
@@ -25,9 +26,34 @@ const TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
 export class ClaudeRunService {
   private readonly runs = new Map<string, Run>();
   private readonly launching = new Set<string>();
+  private readonly recovered = new Map<string, ClaudeRunSnapshot>();
+  private initialization?: Promise<void>;
+  private saving: Promise<void> = Promise.resolve();
+  private storageError?: Error;
   constructor(private readonly options: ClaudeRunOptions) {}
 
-  list(): readonly ClaudeRunSnapshot[] { return [...this.runs.values()].map((run) => this.snapshot(run)); }
+  initialize(): Promise<void> {
+    return this.initialization ??= (async () => {
+      try { for (const run of await this.options.journal?.load() ?? []) this.recovered.set(run.id, run); }
+      catch (error: unknown) { this.storageError = error instanceof Error ? error : new ClaudeRunError('טעינת התקדמות נכשלה.'); throw this.storageError; }
+    })();
+  }
+  async flush(): Promise<void> { await this.saving; if (this.storageError) throw this.storageError; }
+  private changed(run: Run): void {
+    run.updatedAt = Date.now();
+    if (!this.options.journal || this.storageError) return;
+    this.saving = this.options.journal.save(this.list()).catch((error: unknown) => {
+      this.storageError = error instanceof Error ? error : new ClaudeRunError('שמירת התקדמות נכשלה.');
+      for (const live of this.runs.values()) {
+        if (['stopped', 'failed', 'interrupted'].includes(live.state)) continue;
+        live.state = 'interrupted'; live.error = this.storageError.message;
+        live.abort.abort(); live.input.close(); live.query.close();
+      }
+    });
+  }
+  list(): readonly ClaudeRunSnapshot[] {
+    return [...this.recovered.values(), ...[...this.runs.values()].map((run) => this.snapshot(run))].slice(-100);
+  }
   get(id: string): ClaudeRunSnapshot { return this.snapshot(this.owned(id)); }
   private owned(id: string): Run {
     const run = this.runs.get(id);
@@ -36,10 +62,13 @@ export class ClaudeRunService {
   }
   private snapshot(run: Run): ClaudeRunSnapshot {
     return { id: run.id, title: run.title, cwd: run.cwd, state: run.state, queued: run.pending.length,
-      lastReply: run.lastReply, ...(run.error ? { error: run.error } : {}) };
+      lastReply: run.lastReply, updatedAt: run.updatedAt,
+      recoveryInstructions: [run.currentInstruction, ...run.pending].filter((text): text is string => text !== undefined).map((text) => redactClaudeText(text).slice(0, 12_000)),
+      ...(run.error ? { error: run.error } : {}) };
   }
   private enabled(signal?: AbortSignal): void {
     signal?.throwIfAborted();
+    if (this.storageError) throw this.storageError;
     if (!this.options.allowActions()) throw new ClaudeRunError('יש להפעיל פעולות בהגדרות כדי לנהל סשני Claude.');
   }
   private prompt(text: string): string {
@@ -47,6 +76,7 @@ export class ClaudeRunService {
     return text.trim();
   }
   async start(cwd: string, title: string, text: string, resume?: string, signal?: AbortSignal): Promise<ClaudeRunSnapshot> {
+    await this.initialize();
     this.enabled(signal); text = this.prompt(text);
     if (!isAbsolute(cwd) || /[\x00-\x1f]/.test(cwd)) throw new ClaudeRunError('יש לבחור תיקיית פרויקט מלאה.');
     cwd = await realpath(cwd);
@@ -54,10 +84,10 @@ export class ClaudeRunService {
       || checkWrite(cwd, homedir()).level === BLOCK) throw new ClaudeRunError('תיקיית הפרויקט אינה מותרת.');
     const id = resume ?? randomUUID();
     if (!CLAUDE_SESSION_ID.test(id)) throw new ClaudeRunError('מזהה סשן לא תקין.');
-    if (this.launching.has(id) || this.runs.has(id) && !['stopped', 'failed'].includes(this.runs.get(id)!.state)) {
+    if (this.launching.has(id) || this.runs.has(id) && !['stopped', 'failed', 'interrupted'].includes(this.runs.get(id)!.state)) {
       throw new ClaudeRunError('הסשן כבר מנוהל כאן. יש לשלוח לו הוראה במקום להפעיל עותק נוסף.');
     }
-    if ([...this.runs.values()].filter((run) => !['stopped', 'failed'].includes(run.state)).length + this.launching.size >= 4) {
+    if ([...this.runs.values()].filter((run) => !['stopped', 'failed', 'interrupted'].includes(run.state)).length + this.launching.size >= 4) {
       throw new ClaudeRunError('כבר מנוהלים ארבעה סשנים. יש לעצור אחד לפני פתיחת נוסף.');
     }
     this.launching.add(id);
@@ -91,8 +121,12 @@ export class ClaudeRunService {
         canUseTool: async () => ({ behavior: 'deny', message: 'הפעולה חייבת לעבור דרך בדיקת הבטיחות של ג׳ארוויס.' }),
       } });
       run = { id, title: redactClaudeText(title).slice(0, 160) || 'סשן Claude', cwd, input, query, abort,
-        pending: [], state: 'starting', lastReply: '' };
+        pending: [], state: 'starting', lastReply: this.recovered.get(id)?.lastReply ?? '', currentInstruction: text, updatedAt: Date.now() };
       this.runs.set(id, run);
+      this.recovered.delete(id);
+      this.changed(run);
+      try { await this.flush(); this.enabled(signal); run.abort.signal.throwIfAborted(); }
+      catch (error) { if (run.state !== 'stopped') run.state = 'interrupted'; run.abort.abort(); input.close(); query.close(); this.changed(run); throw error; }
       input.push(text);
       run.done = this.consume(run);
       while (this.runs.size > 100) {
@@ -126,9 +160,10 @@ export class ClaudeRunService {
     if (verdict.level === BLOCK) return false;
     if (verdict.level !== SAFE || ['Bash', 'Edit', 'Write'].includes(name)) {
       run.state = 'waiting';
+      this.changed(run);
       try {
         if (!await this.options.confirm(`סשן ״${run.title}״ מבקש ${name}:\n${redactClaudeText(target)}\nלאשר?`, run.abort.signal)) return false;
-      } finally { if (!run.abort.signal.aborted) run.state = 'running'; }
+      } finally { if (!run.abort.signal.aborted) { run.state = 'running'; this.changed(run); } }
     }
     return !run.abort.signal.aborted && this.options.allowActions();
   }
@@ -141,31 +176,42 @@ export class ClaudeRunService {
       }
       if (!run.abort.signal.aborted) { run.state = 'failed'; run.error = 'החיבור ל-Claude נסגר. אפשר להמשיך מההיסטוריה.'; }
     } catch { if (!run.abort.signal.aborted) { run.state = 'failed'; run.error = 'הרצת Claude נכשלה. בדוק את ההתחברות ונסה להמשיך.'; } }
-    finally { run.input.close(); run.pending.length = 0; run.query.close(); }
+    finally { run.input.close(); this.changed(run); run.query.close(); }
   }
   private receive(run: Run, message: SDKMessage): void {
     if (message.type === 'system' && message.subtype === 'init') run.state = 'running';
     if (message.type === 'assistant') run.lastReply = redactClaudeText(message.message.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n')).slice(-8000);
     if (message.type === 'result') {
-      if (message.is_error) { run.state = 'failed'; run.error = 'Claude דיווח שההוראה נכשלה.'; run.pending.length = 0; run.abort.abort(); run.input.close(); run.query.close(); return; }
+      if (message.is_error) { run.state = 'failed'; run.error = 'Claude דיווח שההוראה נכשלה.'; run.abort.abort(); run.input.close(); run.query.close(); this.changed(run); return; }
       const next = run.pending.shift();
+      run.currentInstruction = next;
       run.state = next ? 'running' : 'idle';
       if (next) run.input.push(next);
     }
+    this.changed(run);
   }
-  send(id: string, text: string): ClaudeRunSnapshot {
+  async send(id: string, text: string): Promise<ClaudeRunSnapshot> {
     this.enabled(); text = this.prompt(text);
     const run = this.owned(id);
-    if (['stopped', 'failed'].includes(run.state)) throw new ClaudeRunError('הסשן נעצר; יש לבקש להמשיך אותו.');
+    if (['stopped', 'failed', 'interrupted'].includes(run.state)) throw new ClaudeRunError('הסשן נעצר; יש לבקש להמשיך אותו.');
     if (run.pending.length >= 10) throw new ClaudeRunError('תור ההוראות מלא.');
-    if (run.state === 'idle') { run.state = 'running'; run.input.push(text); }
+    const idle = run.state === 'idle';
+    if (idle) { run.state = 'running'; run.currentInstruction = text; }
     else run.pending.push(text);
+    this.changed(run); await this.flush(); this.enabled();
+    if (run.abort.signal.aborted) throw new ClaudeRunError('הסשן נעצר לפני מסירת ההוראה.');
+    if (idle) run.input.push(text);
     return this.snapshot(run);
   }
   stop(id: string): ClaudeRunSnapshot {
     const run = this.owned(id);
-    run.state = 'stopped'; run.pending.length = 0; run.abort.abort(); run.input.close(); run.query.close();
+    run.state = 'stopped'; run.pending.length = 0; run.currentInstruction = undefined; run.abort.abort(); run.input.close(); run.query.close(); this.changed(run);
     return this.snapshot(run);
   }
-  close(): void { for (const id of this.runs.keys()) this.stop(id); }
+  close(): void {
+    for (const run of this.runs.values()) {
+      if (['stopped', 'failed', 'interrupted'].includes(run.state)) continue;
+      run.state = 'interrupted'; run.abort.abort(); run.input.close(); run.query.close(); this.changed(run);
+    }
+  }
 }
