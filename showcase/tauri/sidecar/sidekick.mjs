@@ -825,8 +825,8 @@ function holdWake(on) {
 }
 const autoListenOn = () => VOICE_OK && !!config.voice && !!config.autoListen && voiceReady() && !intro;
 async function prompt(text, image = null, note = '', byVoice = false) {
-  const problem = await readyAgent();
-  if (problem) return say(problem, 'concerned');
+  const readinessProblem = await readyAgent();
+  if (readinessProblem) return say(readinessProblem, 'concerned');
   busy = true; quiet = false; autoTurn = null;
   holdWake(true);
   if (!intro && !text.startsWith('(')) activity.asked(text);
