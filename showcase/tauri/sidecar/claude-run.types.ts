@@ -1,6 +1,8 @@
 import type { Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeRunJournal } from './claude-run-journal.js';
 import type { ProjectContextReceipt } from './project-context.types.js';
+import type { AsmMemoryService } from './asm-memory.service.js';
+import type { AsmMemoryScope } from './asm-memory.types.js';
 
 export type ClaudeRunState = 'starting' | 'running' | 'waiting' | 'idle' | 'stopped' | 'failed' | 'interrupted';
 export interface ClaudeRunSnapshot {
@@ -14,9 +16,11 @@ export interface ClaudeRunSnapshot {
   readonly updatedAt?: number;
   readonly recoveryInstructions?: readonly string[];
   readonly projectContext?: ProjectContextReceipt;
+  readonly memoryScope?: { readonly project: string; readonly scope: AsmMemoryScope };
 }
 export interface ClaudeRunOptions {
   readonly journal?: ClaudeRunJournal;
+  readonly memory?: AsmMemoryService;
   readonly executable: () => string;
   readonly env?: () => Record<string, string | undefined>;
   readonly allowActions: () => boolean;
