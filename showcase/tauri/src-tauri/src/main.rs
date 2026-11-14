@@ -326,6 +326,13 @@ fn sidecar_send(app: AppHandle, window: WebviewWindow, msg: Value) {
 fn session_center_message_allowed(msg: &Value) -> bool {
     match msg.get("type").and_then(Value::as_str) {
         Some("session_center_open") => true,
+        Some("task_history") => msg.get("requestId").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
+            && msg.get("filter").is_some_and(Value::is_object)
+            && (msg.get("action").and_then(Value::as_str) == Some("list")
+                || (msg.get("action").and_then(Value::as_str) == Some("archive")
+                    && msg.get("input").is_some_and(|input| input.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
+                        && input.get("archived").is_some_and(Value::is_boolean)
+                        && input.get("expectedUpdatedAt").and_then(Value::as_u64).is_some()))),
         Some("live_panel_visible_rows") => msg.get("viewId").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
             && msg.get("refs").and_then(Value::as_array).is_some_and(|refs| refs.len() <= 10 && refs.iter().all(|r| r.as_str().is_some_and(|id| id.len() == 36))),
         Some("live_query_visibility") => msg.get("visible").is_some_and(Value::is_boolean),
@@ -1633,6 +1640,11 @@ mod tests {
     #[test]
     fn session_window_only_sends_scoped_session_messages() {
         assert!(session_center_message_allowed(&json!({"type":"session_center_open"})));
+        let task_id="12345678-1234-4567-8901-123456789abc";
+        assert!(session_center_message_allowed(&json!({"type":"task_history","action":"list","requestId":task_id,"filter":{}})));
+        assert!(session_center_message_allowed(&json!({"type":"task_history","action":"archive","requestId":task_id,"filter":{},"input":{"id":task_id,"expectedUpdatedAt":1,"archived":true}})));
+        assert!(!session_center_message_allowed(&json!({"type":"task_history","action":"delete","requestId":task_id,"filter":{}})));
+        assert!(!session_center_message_allowed(&json!({"type":"task_history","action":"archive","requestId":task_id,"filter":{},"input":{"id":task_id,"expectedUpdatedAt":-1,"archived":true}})));
         assert!(session_center_message_allowed(&json!({"type":"live_panel_visible_rows","viewId":"12345678-1234-4567-8901-123456789abc","refs":[]})));
         assert!(!session_center_message_allowed(&json!({"type":"live_panel_visible_rows","viewId":"12345678-1234-4567-8901-123456789abc","refs":["wrong"]})));
         assert!(session_center_message_allowed(&json!({"type":"live_query_visibility","visible":false})));

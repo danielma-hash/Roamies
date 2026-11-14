@@ -26,7 +26,7 @@ export class TaskRunService {
       } catch { this.failure = new TaskRunError(); throw this.failure; }
     })();
   }
-  list(): readonly TaskRun[] { return structuredClone(this.archive.runs); }
+  list(includeArchived=false): readonly TaskRun[] { return structuredClone(this.archive.runs.filter(run=>includeArchived||run.archivedAt===undefined)); }
   get(id: string): TaskRun {
     const found = this.archive.runs.find((run) => run.id === id);
     if (!found) throw new TaskRunError('המשימה אינה קיימת ביומן המקומי.');
@@ -46,8 +46,8 @@ export class TaskRunService {
   }
   create(request: string, hasImage = false): Promise<TaskRun> {
     return this.change((runs) => {
-      if (runs.length >= 100) {
-        const oldest = runs.findIndex((run) => (run.status === 'returned' || run.status === 'failed') && run.tools.every((tool) => tool.status === 'returned'));
+      if (runs.filter(run=>run.archivedAt===undefined).length >= 100) {
+        const oldest = runs.findIndex((run) => run.archivedAt===undefined&&(run.status === 'returned' || run.status === 'failed') && run.tools.every((tool) => tool.status === 'returned'));
         if (oldest < 0) throw new TaskRunError('יומן המשימות מלא במשימות שדורשות בדיקה. לא נמחקה התקדמות.');
         runs.splice(oldest, 1);
       }
@@ -61,6 +61,19 @@ export class TaskRunService {
       const run = this.find(runs, id);
       if (run.status !== 'queued') throw new TaskRunError('משימה שנקטעה אינה מופעלת מחדש אוטומטית.');
       run.status = 'running'; run.conversationId = conversationId; run.updatedAt = Date.now();
+    });
+  }
+  setArchived(id:string,expectedUpdatedAt:number,archived:boolean,guard:()=>void=()=>{}):Promise<TaskRun> {
+    return this.change(runs=>{
+      guard();
+      const run=this.find(runs,id);
+      if(unfinished(run))throw new TaskRunError('לא ניתן להעביר משימה פעילה לארכיון.');
+      if((run.archivedAt!==undefined)===archived)return run;
+      if(run.updatedAt!==expectedUpdatedAt)throw new TaskRunError('המשימה השתנתה. יש לרענן לפני הפעולה.');
+      if(runs.filter(item=>(item.archivedAt!==undefined)===archived).length>=100)throw new TaskRunError(archived?'הארכיון מלא; לא נמחקה משימה.':'הרשימה הפעילה מלאה; יש להעביר משימה אחרת לארכיון.');
+      run.updatedAt=Math.max(Date.now(),run.updatedAt+1);
+      if(archived)run.archivedAt=run.updatedAt;else delete run.archivedAt;
+      return run;
     });
   }
   beginTool(id: string, callId: string, name: string, args: unknown, budget?: TaskBudgetSnapshot): Promise<void> {

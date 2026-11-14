@@ -6,6 +6,7 @@ import type { ClaudeControlAction } from './browser-claude-control.js';
 import { sessionAction, sessionRows, SESSION_LABELS } from './session-center.model.js';
 import type { SessionCenterSnapshot, SessionFilter } from './session-center.types.js';
 import { SessionViewStore } from './session-view-store.js';
+import { TaskHistoryView } from './browser-task-history.js';
 
 type Request = ClaudeControlAction | { readonly type: 'workspace'; readonly action: 'sessions.list'; readonly query: string };
 type Invoke = (command: string, args: { readonly msg: unknown }) => Promise<unknown>;
@@ -161,29 +162,32 @@ const invoke = window.__TAURI__?.core?.invoke;
 if (root && invoke) {
   const store = new SessionViewStore({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
   const tabs = node('nav', '', 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'תצוגת מרחב העבודה');
-  const sessions = node('section', '', 'workspace-pane'); const panels = node('section', '', 'workspace-pane');
-  sessions.id = 'workspace-sessions'; panels.id = 'workspace-panels';
-  sessions.setAttribute('role', 'tabpanel'); panels.setAttribute('role', 'tabpanel');
-  let activeView: 'sessions' | 'panels' = 'sessions';
+  const sessions = node('section', '', 'workspace-pane'); const panels = node('section', '', 'workspace-pane'); const tasks = node('section', '', 'workspace-pane');
+  sessions.id = 'workspace-sessions'; panels.id = 'workspace-panels'; tasks.id='workspace-tasks';
+  sessions.setAttribute('role', 'tabpanel'); panels.setAttribute('role', 'tabpanel'); tasks.setAttribute('role','tabpanel');
+  let activeView: 'sessions' | 'panels' | 'tasks' = 'sessions';
   const visibility = (): void => { void invoke('sidecar_send', { msg: { type: 'live_query_visibility', visible: activeView === 'panels' && !document.hidden } }).catch(() => {}); };
   document.addEventListener('visibilitychange', visibility);
-  const select = (name: 'sessions' | 'panels'): void => {
+  const select = (name: 'sessions' | 'panels' | 'tasks'): void => {
     activeView = name; visibility();
-    sessions.hidden = name !== 'sessions'; panels.hidden = name !== 'panels';
+    sessions.hidden = name !== 'sessions'; panels.hidden = name !== 'panels'; tasks.hidden=name!=='tasks';
+    if(name==='tasks')history.refresh();
     tabs.querySelectorAll<HTMLButtonElement>('button').forEach((tab) => { const active = tab.dataset.view === name; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; });
   };
-  for (const [name, title] of [['sessions', 'סשנים'], ['panels', 'מסכים']] as const) {
+  for (const [name, title] of [['sessions', 'סשנים'], ['panels', 'מסכים'], ['tasks','משימות']] as const) {
     const tab = button(title, () => select(name)); tab.id = `tab-${name}`; tab.dataset.view = name; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `workspace-${name}`); tabs.append(tab);
-    (name === 'sessions' ? sessions : panels).setAttribute('aria-labelledby', tab.id);
-    tab.addEventListener('keydown', (event) => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 'sessions' : event.key === 'End' ? 'panels' : name === 'sessions' ? 'panels' : 'sessions'; select(next); tabs.querySelector<HTMLButtonElement>(`[data-view=${next}]`)?.focus(); });
+    ({sessions,panels,tasks}[name]).setAttribute('aria-labelledby', tab.id);
+    tab.addEventListener('keydown', (event) => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const names=['sessions','panels','tasks'] as const; const next = event.key === 'Home' ? 'sessions' : event.key === 'End' ? 'tasks' : names[(names.indexOf(name)+(event.key==='ArrowLeft'?1:2))%3]!; select(next); tabs.querySelector<HTMLButtonElement>(`[data-view=${next}]`)?.focus(); });
   }
-  root.append(tabs, sessions, panels); select('sessions');
+  root.append(tabs, sessions, panels, tasks); select('sessions');
+  const history=new TaskHistoryView(tasks,(msg)=>invoke('sidecar_send',{msg}));
   const view = new SessionCenterView(sessions, invoke, store);
   const libraryRoot = node('div'); const displayRoot = node('div'); panels.append(libraryRoot, displayRoot);
   const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }), (enabled) => invoke('sidecar_send', { msg: { type: 'live_query_enabled', enabled } }));
   const live = new LivePanelView(displayRoot, new PanelViewStateService({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }), { ack: (viewId, refs) => { void invoke('sidecar_send', { msg: { type: 'live_panel_visible_rows', viewId, refs } }).catch(() => {}); }, openSession: (id) => { select('sessions'); view.selectSession(id); } });
   window.__sessionCenter = (message) => {
-    if (record(message) && message.kind === 'live_query') live.receiveQuery(message);
+    if (record(message) && message.kind === 'task_history') history.receive(message);
+    else if (record(message) && message.kind === 'live_query') live.receiveQuery(message);
     else if (record(message) && message.kind === 'live_panel_library') library.receive(message);
     else if (record(message) && message.kind === 'live_panel') {
       if (live.receive(message.panel) || message.focus === true) select('panels');
