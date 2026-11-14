@@ -2,14 +2,25 @@ import type {ClaudeSessionsService} from './claude-sessions.service.js';
 import type {ClaudeRunService} from './claude-run.service.js';
 import type {TaskCardsService} from './task-cards.service.js';
 import type {AttentionService} from './attention.service.js';
+import type {TaskRunService} from './task-run.service.js';
 import type {LiveQuerySource,LiveQueryTable} from './live-query.types.js';
 const status:Readonly<Record<string,string>>={running:'פועל',waiting:'ממתין',idle:'מוכן',ended:'הסתיים',unknown:'לא ידוע',starting:'מתחיל',stopped:'נעצר',failed:'נכשל',interrupted:'נקטע',OPEN:'פתוח',CLOSED:'סגור',MERGED:'מוזג'};
 const clipped=(value:string):string=>value.slice(0,200);
 const time=(timestamp:number):string=>new Date(timestamp).toLocaleString('he-IL');
 export class LiveQueryProviderService {
- constructor(private readonly sessions:Pick<ClaudeSessionsService,'list'>,private readonly runs:Pick<ClaudeRunService,'list'>,private readonly cards:Pick<TaskCardsService,'list'|'read'>,private readonly attention:Pick<AttentionService,'snapshot'>){}
+ constructor(private readonly sessions:Pick<ClaudeSessionsService,'list'>,private readonly runs:Pick<ClaudeRunService,'list'>,private readonly cards:Pick<TaskCardsService,'list'|'read'>,private readonly attention:Pick<AttentionService,'snapshot'>,private readonly tasks?:Pick<TaskRunService,'list'|'initialize'|'flush'>){}
  async read(source:LiveQuerySource,query:string,signal:AbortSignal):Promise<LiveQueryTable>{
   signal.throwIfAborted();const matches=(text:string)=>text.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+  if(source==='tasks'){
+   if(!this.tasks)throw new Error('יומן המשימות אינו מחובר.');
+   await this.tasks.initialize();await this.tasks.flush();signal.throwIfAborted();
+   const labels:Readonly<Record<string,string>>={queued:'בתור',running:'פועלת',returned:'התקבלה תשובה',failed:'נכשלה',interrupted:'נקטעה'};
+   const rows=this.tasks.list().filter(task=>matches(task.request)).sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,10);
+   return {columns:['בקשה','מצב','קריאות כלים','דורשת בירור','עדכון'],rows:rows.map(task=>[
+    clipped(task.request),labels[task.status]??task.status,`${task.tools.filter(tool=>tool.status==='returned').length}/${task.tools.length} חזרו`,
+    ['interrupted','failed'].includes(task.status)||task.tools.some(tool=>['error','unknown'].includes(tool.status))?'כן':'לא דווחה תקלה',time(task.updatedAt),
+   ]),rowIds:rows.map(task=>task.id),observedAt:Date.now(),source:'יומן Jarvis המקומי — עד 10 בקשות; חזרת כלי או תשובה אינה אימות הצלחה'};
+  }
   if(source==='sessions'){
    const list=await this.sessions.list({limit:100});signal.throwIfAborted();if(!list.available)throw new Error('רשימת הסשנים אינה זמינה.');
    const owned=this.runs.list();const ids=new Set(owned.map(run=>run.id));

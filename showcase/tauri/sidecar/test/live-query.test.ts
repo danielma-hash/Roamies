@@ -27,3 +27,9 @@ it('rejects malformed oversized output rather than publishing it',async()=>{
  vi.useFakeTimers();const messages:LiveQueryMessage[]=[];const service=new LiveQueryService(async()=>({...table(),rows:[['x'.repeat(201)]]}),m=>messages.push(m),()=>true);
  service.activate(panel,true);await vi.advanceTimersByTimeAsync(0);expect(messages.at(-1)?.status).toBe('error');expect(messages.some(m=>m.status==='ready')).toBe(false);service.close();
 });
+it('refreshes local task progress every three seconds and stops when the panel is hidden',async()=>{
+ vi.useFakeTimers();const read=vi.fn(async()=>table());const service=new LiveQueryService(read,()=>{},()=>true);
+ const tasks:LivePanelEnvelope={...panel,spec:{title:'משימות',blocks:[{kind:'query',id:'tasks',title:'התקדמות',source:'tasks'}]}};
+ service.activate(tasks,true);await vi.advanceTimersByTimeAsync(0);await vi.advanceTimersByTimeAsync(3000);expect(read).toHaveBeenCalledTimes(2);
+ expect(read).toHaveBeenLastCalledWith('tasks','',expect.any(AbortSignal));service.activate(tasks,false);await vi.advanceTimersByTimeAsync(30_000);expect(read).toHaveBeenCalledTimes(2);service.close();
+});
