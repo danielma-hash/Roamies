@@ -13,7 +13,7 @@ const descriptions: Readonly<Record<Family, string>> = {
   files: 'חיפוש, קריאה וכתיבת קבצים ופקודות מקומיות לפי מדיניות הבטיחות',
   commitments: 'רשימות, התחייבויות ותזכורות',
   visuals: 'תמונה, טבלה, גרף, טופס, לוח ותרשים במרחב העבודה',
-  github: 'קריאת issues, PRs, בדיקות וקטעי diff עם אימות SHA',
+  github: 'קריאת issues, PRs ובדיקות, ופתיחת טיוטת PR מאושרת עם אימות SHA',
 };
 const requirements: Readonly<Record<Family, readonly string[]>> = {
   core: ['Roamies UI'], sessions: ['Claude local history; Claude CLI and sign-in for managed runs; exact action approval'],
@@ -22,7 +22,7 @@ const requirements: Readonly<Record<Family, readonly string[]>> = {
   desktop: ['Native helpers; visible window; macOS Accessibility where applicable; action settings and policy'],
   files: ['Local filesystem permissions and safety policy; confirmation where required'],
   commitments: ['Local Roamies storage'], visuals: ['Roamies UI; readable image when requested'],
-  github: ['Local gh CLI authenticated with repository read access; github.com only'],
+  github: ['Local gh CLI authenticated; github.com only; draft creation requires installed factory policy, actions setting and exact approval'],
 };
 function familyOf(name: string): Family {
   if (name.startsWith('github_')) return 'github';

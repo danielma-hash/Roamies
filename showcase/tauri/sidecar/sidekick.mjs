@@ -26,6 +26,10 @@ import { TaskRunError } from './task-run-error.ts';
 import { createTaskRunTools } from './task-run-tools.ts';
 import { GitHubReadService } from './github-read.service.ts';
 import { createGitHubReadTools } from './github-read-tools.ts';
+import { GitHubPrService } from './github-pr.service.ts';
+import { GitHubPrStoreService } from './github-pr-store.service.ts';
+import { createGitHubPrTools } from './github-pr-tools.ts';
+import { FactoryPolicyService } from './factory-policy.service.ts';
 import { TaskBudgetService, withTaskBudget, DEFAULT_TASK_BUDGET } from './task-budget.service.ts';
 import { TaskBudgetError } from './task-budget-error.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
@@ -1398,6 +1402,10 @@ let taskRecoveryError;
 await taskRuns.initialize().catch((error) => { taskRecoveryError = error.message; });
 tools.push(...createTaskRunTools(taskRuns));
 tools.push(...createGitHubReadTools(new GitHubReadService()));
+const factoryPolicy = new FactoryPolicyService();
+tools.push(...createGitHubPrTools(new GitHubPrService(new GitHubPrStoreService(path.join(workspaceData, 'github-pr-intents.json')), {
+  allowed: () => !!config.allowActions, confirm: confirmClaudeControl, policy: (cwd, repo, signal) => factoryPolicy.inspect(cwd, repo, signal),
+})));
 const browserDocker = localDockerProcess();
 const browserTasks = browserDocker ? new BrowserTaskService({
   docker: (args, input, signal) => browserDocker.run(args, input, signal),
