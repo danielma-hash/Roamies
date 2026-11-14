@@ -6,6 +6,7 @@
 // out: {type:'menu', items} {type:'ui', msg} {type:'overlays', ids}
 import { Agent } from '@kenkaiiii/gg-agent';
 import { z } from 'zod';
+import { ScopedApprovalService } from './scoped-approval.service.ts';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
 import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
 import { agentEvents, stallWatch } from './agentstream.mjs';
@@ -1311,10 +1312,13 @@ function menu() {
 let panelOpen = false, sessionCenterOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
+const sessionApproval = new ScopedApprovalService(() => panel());
 let claudeApprovalQueue = Promise.resolve();
 const confirmClaudeControl = (text, signal) => {
+  const inCenter = sessionCenterOpen;
   const next = claudeApprovalQueue.then(async () => {
     if (signal?.aborted) return false;
+    if (inCenter) return sessionCenterOpen ? sessionApproval.request(text, signal) : false;
     const answer = await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal);
     return isYes(answer) || /^(כן|אשר|מאשר|מאשרת|אפשר|בצע)[.!\s]*$/u.test(String(answer).trim());
   });
@@ -1361,7 +1365,7 @@ function panel() {
   setImmediate(() => {
     panelQueued = false;
     if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } });
-    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error } } });
+    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error, approval: sessionApproval.current() } } });
   });
 }
 const panelNote = (text, bad = false, p = null) => {
@@ -1839,7 +1843,8 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
   else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
-  else if (m.type === 'session_center_closed') sessionCenterOpen = false;
+  else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionApproval.cancel(); }
+  else if (m.type === 'session_center_approval' && typeof m.id === 'string' && typeof m.accepted === 'boolean') sessionApproval.answer(m.id, m.accepted);
   else if (m.type === 'workspace') {
     const receipt = (error, cancelled = false) => {
       if (typeof m.clientRequestId === 'string' && /^[a-f0-9-]{36}$/i.test(m.clientRequestId)) send({ type: 'session_center', msg: { kind: 'action_result', requestId: m.clientRequestId, ...(error ? { error } : {}), cancelled } });
