@@ -1,3 +1,5 @@
+import { INSPECT_CONTROLS, APPLY_CONTROL } from './browser-controls-script.js';
+import type { BrowserControlTarget } from './browser-controls.types.js';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
@@ -86,6 +88,16 @@ export class BrowserTaskService {
     const job = this.jobs.get(input.jobId); if (!job || job.state !== 'ready') throw new BrowserTaskError('משימת הדפדפן אינה פעילה. יש לפתוח משימה חדשה.');
     if (job.busy) throw new BrowserTaskError('קריאה כבר מתבצעת במשימה הזאת.'); job.busy = true;
     try { return await this.snapshot(job, input, signal); } catch (error) { await this.close(job.id); throw error; } finally { job.busy = false; }
+  }
+  inspectControls(jobId: string, signal?: AbortSignal): Promise<unknown> { return this.controlOperation(jobId, INSPECT_CONTROLS, {}, signal); }
+  applyControl(target: BrowserControlTarget, signal?: AbortSignal): Promise<unknown> { return this.controlOperation(target.jobId, APPLY_CONTROL, { target }, signal); }
+  private async controlOperation(jobId: string, script: string, data: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    z.uuid().parse(jobId); const job = this.jobs.get(jobId);
+    if (!job || job.state !== 'ready' || job.busy) throw new BrowserTaskError('משימת הדפדפן אינה זמינה או עסוקה.');
+    if (this.now() >= job.created + LIFE || ++job.steps > 20) { await this.close(jobId); throw new BrowserTaskError('תקציב משימת הדפדפן הסתיים.'); }
+    job.busy = true;
+    try { return await this.python(job, `p=json.loads(${JSON.stringify(JSON.stringify({ ...data, tab: job.tab }))})\n${script}`, signal); }
+    catch (error) { await this.close(jobId); throw error; } finally { job.busy = false; }
   }
   private async removeOwned(job: Job, kind: 'container' | 'network', name: string): Promise<void> {
     let records: unknown;

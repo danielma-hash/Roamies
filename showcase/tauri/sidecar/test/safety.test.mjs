@@ -362,3 +362,11 @@ console.log('safety loophole tests: passed');
   assert.notEqual(riskyKind('Delete'), riskyKind('Send'));
   console.log('risky kind tests: passed');
 }
+
+const { checkBrowserAction } = await import('../safety.mjs');
+assert.equal(checkBrowserAction('https://example.com','fill',{allowActions:true,text:'עברית'}).level,ASK);
+assert.equal(checkBrowserAction('https://example.com','click',{allowActions:true}).level,ASK);
+assert.equal(checkBrowserAction('https://example.com','click',{allowActions:false}).level,BLOCK);
+assert.equal(checkBrowserAction('https://127.0.0.1','click',{allowActions:true}).level,BLOCK);
+assert.equal(checkBrowserAction('https://example.com','fill',{allowActions:true,text:'x'.repeat(2001)}).level,BLOCK);
+assert.equal(checkBrowserAction('https://example.com','eval',{allowActions:true}).level,BLOCK);
