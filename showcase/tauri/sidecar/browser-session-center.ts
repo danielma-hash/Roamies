@@ -85,6 +85,8 @@ export class SessionCenterView {
     } else if (message.kind === 'note' && typeof message.text === 'string') this.notice.textContent = message.text;
   }
 
+  selectSession(id: string): void { this.selected = id; this.filter = 'all'; this.search.value = ''; this.persistView(); this.renderList(); this.renderDetail(); void this.send({ type: 'workspace', action: 'sessions.list', query: '' }); }
+
   private renderApproval(): void {
     const offer = this.state.approval;
     if (this.approvalId === offer?.id) return;
@@ -179,7 +181,7 @@ if (root && invoke) {
   const view = new SessionCenterView(sessions, invoke, store);
   const libraryRoot = node('div'); const displayRoot = node('div'); panels.append(libraryRoot, displayRoot);
   const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }), (enabled) => invoke('sidecar_send', { msg: { type: 'live_query_enabled', enabled } }));
-  const live = new LivePanelView(displayRoot, new PanelViewStateService({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }));
+  const live = new LivePanelView(displayRoot, new PanelViewStateService({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }), { ack: (viewId, refs) => { void invoke('sidecar_send', { msg: { type: 'live_panel_visible_rows', viewId, refs } }).catch(() => {}); }, openSession: (id) => { select('sessions'); view.selectSession(id); } });
   window.__sessionCenter = (message) => {
     if (record(message) && message.kind === 'live_query') live.receiveQuery(message);
     else if (record(message) && message.kind === 'live_panel_library') library.receive(message);

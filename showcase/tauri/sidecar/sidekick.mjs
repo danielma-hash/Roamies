@@ -12,6 +12,8 @@ import { DesktopDriverService } from './desktop-driver.service.ts';
 import { DesktopProcessService } from './desktop-process.service.ts';
 import { BrowserControlsService } from './browser-controls.service.ts';
 import { createBrowserControlTools } from './browser-control-tools.ts';
+import { PanelActionService } from './panel-action.service.ts';
+import { createPanelActionTools } from './panel-action-tool.ts';
 import { LiveQueryService } from './live-query.service.ts';
 import { LiveQueryProviderService } from './live-query-provider.service.ts';
 import { LivePanelService } from './live-panel.service.ts';
@@ -1406,7 +1408,16 @@ async function resumeConversation(id) {
 }
 const attentionService = new AttentionService({filePath:path.join(workspaceData,'attention.json')});
 const queryProvider = new LiveQueryProviderService(claudeSessions, claudeRuns, taskCards, attentionService);
-const liveQueries = new LiveQueryService((source, query, signal) => queryProvider.read(source, query, signal), (msg) => send({type:'session_center',msg}), () => config.liveQueries !== false);
+const panelActions = new PanelActionService(() => livePanels.snapshot(), () => sessionCenterOpen && config.liveQueries !== false, (id) => {
+  const run = claudeRuns.list().find((run) => run.id === id);
+  return !run || ['stopped','failed','interrupted'].includes(run.state) ? ['resume'] : ['send','stop'];
+}, (action, id, instruction, context) => {
+  const tool = claudeControlTools.find((tool) => tool.name === `claude_control_${action}`);
+  if (!tool) throw new Error('פעולת הסשן אינה זמינה.');
+  return tool.execute({id,instruction}, context);
+});
+tools.push(...createPanelActionTools(panelActions));
+const liveQueries = new LiveQueryService((source, query, signal) => queryProvider.read(source, query, signal), (msg) => send({type:'session_center',msg:panelActions.decorate(msg)}), () => config.liveQueries !== false);
 let liveQueryVisible = false;
 let sessionCenterFocused = false;
 const syncLiveQueries = () => liveQueries.activate(livePanels.snapshot(), sessionCenterOpen && sessionCenterFocused && liveQueryVisible);
@@ -1899,13 +1910,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'live_panel_visible_rows') panelActions.acknowledge(m.viewId, m.refs);
   else if (m.type === 'session_center_focus') { sessionCenterFocused = m.focused === true; syncLiveQueries(); }
-  else if (m.type === 'live_query_visibility' && typeof m.visible === 'boolean') { liveQueryVisible = m.visible; syncLiveQueries(); }
-  else if (m.type === 'live_query_enabled' && typeof m.enabled === 'boolean') { config.liveQueries = m.enabled; saveConfig(); syncLiveQueries(); panel(); }
+  else if (m.type === 'live_query_visibility' && typeof m.visible === 'boolean') { liveQueryVisible = m.visible; if (!m.visible) panelActions.clear(); syncLiveQueries(); }
+  else if (m.type === 'live_query_enabled' && typeof m.enabled === 'boolean') { config.liveQueries = m.enabled; if (!m.enabled) panelActions.clear(); saveConfig(); syncLiveQueries(); panel(); }
   else if (m.type === 'saved_panel_open' && typeof m.id === 'string') { livePanels.open(m.id).then(() => { livePanelError = undefined; showLivePanel(); }).catch((error) => { livePanelError = error.message; panel(); }); }
   else if (m.type === 'live_panel_rendered') livePanels.markRendered(m.id, m.revision);
   else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
-  else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionCenterFocused = false; liveQueryVisible = false; liveQueries.close(); sessionApproval.cancel(); }
+  else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionCenterFocused = false; liveQueryVisible = false; liveQueries.close(); panelActions.clear(); sessionApproval.cancel(); }
   else if (m.type === 'session_center_approval' && typeof m.id === 'string' && typeof m.accepted === 'boolean') sessionApproval.answer(m.id, m.accepted);
   else if (m.type === 'workspace') {
     const receipt = (error, cancelled = false) => {

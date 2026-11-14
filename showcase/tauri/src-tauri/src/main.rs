@@ -326,6 +326,8 @@ fn sidecar_send(app: AppHandle, window: WebviewWindow, msg: Value) {
 fn session_center_message_allowed(msg: &Value) -> bool {
     match msg.get("type").and_then(Value::as_str) {
         Some("session_center_open") => true,
+        Some("live_panel_visible_rows") => msg.get("viewId").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
+            && msg.get("refs").and_then(Value::as_array).is_some_and(|refs| refs.len() <= 10 && refs.iter().all(|r| r.as_str().is_some_and(|id| id.len() == 36))),
         Some("live_query_visibility") => msg.get("visible").is_some_and(Value::is_boolean),
         Some("live_query_enabled") => msg.get("enabled").is_some_and(Value::is_boolean),
         Some("saved_panel_open") => msg.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36),
@@ -1683,6 +1685,8 @@ mod tests {
     #[test]
     fn session_window_only_sends_scoped_session_messages() {
         assert!(session_center_message_allowed(&json!({"type":"session_center_open"})));
+        assert!(session_center_message_allowed(&json!({"type":"live_panel_visible_rows","viewId":"12345678-1234-4567-8901-123456789abc","refs":[]})));
+        assert!(!session_center_message_allowed(&json!({"type":"live_panel_visible_rows","viewId":"12345678-1234-4567-8901-123456789abc","refs":["wrong"]})));
         assert!(session_center_message_allowed(&json!({"type":"live_query_visibility","visible":false})));
         assert!(session_center_message_allowed(&json!({"type":"live_query_enabled","enabled":true})));
         assert!(!session_center_message_allowed(&json!({"type":"session_center_focus","focused":true})));
