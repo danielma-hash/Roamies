@@ -1,3 +1,4 @@
+import type {PanelViewStateService} from './panel-view-state.service.js';
 import { livePanelEnvelopeSchema } from './live-panel.schema.js';
 import type { LiveBlock,LivePanelEnvelope } from './live-panel.types.js';
 const el=<K extends keyof HTMLElementTagNameMap>(tag:K,text='',className=''):HTMLElementTagNameMap[K]=>{const node=document.createElement(tag);node.textContent=text;node.className=className;return node;};
@@ -8,7 +9,7 @@ const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,
 /** Closed component catalog. All model strings are text, never DOM markup or executable attributes. */
 export class LivePanelView {
  private current?:LivePanelEnvelope;
- constructor(private readonly root:HTMLElement){root.classList.add('live-panel-root');root.append(el('h1','המסך הבא מתחיל בבקשה שלך'),el('p','אפשר לבקש מג׳ארוויס טבלת השוואה, גרף, לוח עבודה או תרשים.','freshness'));}
+ constructor(private readonly root:HTMLElement,private readonly state?:PanelViewStateService){root.classList.add('live-panel-root');root.append(el('h1','המסך הבא מתחיל בבקשה שלך'),el('p','אפשר לבקש מג׳ארוויס טבלת השוואה, גרף, לוח עבודה או תרשים.','freshness'));}
  receive(input:unknown):boolean {
   const parsed=livePanelEnvelopeSchema.safeParse(input);
   if(!parsed.success)return false;
@@ -25,7 +26,7 @@ export class LivePanelView {
   const section=el('section','',`live-block live-${block.kind}`);section.dataset.block=block.id;
   const heading=el('h2',block.title);heading.id=`live-${panelId}-${block.id}`;section.setAttribute('aria-labelledby',heading.id);section.append(heading);
   if(block.kind==='text')section.append(el('p',block.body,'live-copy'));
-  if(block.kind==='table')this.table(section,block);
+  if(block.kind==='table')this.table(section,block,panelId);
   if(block.kind==='bar'){
    const max=Math.max(1,...block.points.map(point=>point.value));const list=el('ul','','live-bars');
    for(const point of block.points){const row=el('li');const label=el('span',point.label);label.dir='auto';const value=el('strong',`${number(point.value)} ${block.unit??''}`);const bar=el('progress');bar.max=max;bar.value=point.value;bar.setAttribute('aria-label',`${point.label}: ${number(point.value)} ${block.unit??''}`);row.append(label,value,bar);list.append(row);}section.append(list);
@@ -37,25 +38,32 @@ export class LivePanelView {
   if(block.kind==='flow')this.flow(section,block,panelId);
   return section;
  }
- private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>):void {
+ private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>,panelId:string):void {
   const search=el('input');search.type='search';search.placeholder='סינון הטבלה';search.maxLength=100;search.setAttribute('aria-label',`סינון ${block.title}`);search.dir='auto';
+  const signature=JSON.stringify(['table',block.columns]);search.value=this.state?.read(panelId,block.id,signature)?.query?.slice(0,100)??'';
+  const saved=el('p',this.state?.error??'','freshness');saved.setAttribute('role','status');
   const scroller=el('div','','live-table-scroll');const table=el('table');const head=el('thead');const row=el('tr');for(const title of block.columns){const cell=el('th',title);cell.scope='col';cell.dir='auto';row.append(cell);}head.append(row);
   const body=el('tbody');table.append(head,body);scroller.append(table);const count=el('p','','freshness');count.setAttribute('role','status');
   const render=():void=>{const query=search.value.toLocaleLowerCase();const rows=block.rows.filter(values=>values.some(value=>cellText(value).toLocaleLowerCase().includes(query)));body.replaceChildren();for(const values of rows){const row=el('tr');for(const value of values){const cell=el('td',cellText(value));cell.dir='auto';row.append(cell);}body.append(row);}count.textContent=`${rows.length} מתוך ${block.rows.length} שורות`;};
-  search.addEventListener('input',render);section.append(search,scroller,count);render();
+  search.addEventListener('input',()=>{render();this.state?.save(panelId,block.id,signature,{query:search.value.slice(0,100)});saved.textContent=this.state?.error??'';});section.append(search,scroller,count,saved);render();
  }
  private form(section:HTMLElement,block:Extract<LiveBlock,{kind:'form'}>,panelId:string):void {
   const form=el('form');const inputs=new Map<string,HTMLInputElement|HTMLSelectElement>();
+  const signature=JSON.stringify(['form',block.fields.map(({id,label,kind,options})=>({id,label,kind,options}))]);
+  const draft=this.state?.read(panelId,block.id,signature);
   for(const field of block.fields){
    const label=el('label',field.label,'live-field');const input=field.kind==='select'?el('select'):el('input');input.id=`form-${panelId}-${block.id}-${field.id}`;label.htmlFor=input.id;input.name=field.id;input.dir='auto';
-   if(input instanceof HTMLSelectElement){for(const value of field.options??[]){const option=el('option',value);option.value=value;input.append(option);}input.value=field.value??field.options?.[0]??'';}
-   else if(field.kind==='toggle'){input.type='checkbox';input.checked=field.value==='true';label.classList.add('live-toggle');}
-   else{input.type='text';input.maxLength=400;input.value=field.value??'';}
+   if(input instanceof HTMLSelectElement){for(const value of field.options??[]){const option=el('option',value);option.value=value;input.append(option);}input.value=draft?.[field.id]!==undefined&&field.options?.includes(draft[field.id]!)?draft[field.id]!:field.value??field.options?.[0]??'';}
+   else if(field.kind==='toggle'){input.type='checkbox';input.checked=(draft?.[field.id]??field.value)==='true';label.classList.add('live-toggle');}
+   else{input.type='text';input.maxLength=400;input.value=draft?.[field.id]??field.value??'';}
    inputs.set(field.id,input);label.append(input);form.append(label);
   }
+  const saved=el('p',this.state?.error??'','freshness');saved.setAttribute('role','status');
+  const persist=():void=>{const values=Object.fromEntries([...inputs].map(([key,input])=>[key,input instanceof HTMLInputElement&&input.type==='checkbox'?String(input.checked):input.value]));this.state?.save(panelId,block.id,signature,values);saved.textContent=this.state?.error??'';};
+  form.addEventListener('input',persist);form.addEventListener('change',persist);
   const preview=el('button','תצוגה מקדימה');preview.type='submit';const result=el('div','','live-form-preview');result.setAttribute('role','status');
   form.addEventListener('submit',event=>{event.preventDefault();result.replaceChildren(...block.fields.map(field=>{const input=inputs.get(field.id)!;const value=input instanceof HTMLInputElement&&input.type==='checkbox'?(input.checked?'כן':'לא'):input.value;return el('p',`${field.label}: ${value||'לא נבחר'}`);}));});
-  form.append(preview,el('p','הבחירות נשארות במסך הזה ואינן מפעילות פעולה.','freshness'),result);section.append(form);
+  form.append(preview,el('p',this.state?'הבחירות נשמרות מקומית ואינן מפעילות פעולה.':'הבחירות נשארות במסך הזה ואינן מפעילות פעולה.','freshness'),saved,result);section.append(form);
  }
  private flow(section:HTMLElement,block:Extract<LiveBlock,{kind:'flow'}>,panelId:string):void {
   const rows=Math.ceil(block.nodes.length/3);const height=rows*110;const image=svg('svg',{viewBox:`0 0 600 ${height}`,role:'img','aria-label':block.title,class:'live-flow-image'});

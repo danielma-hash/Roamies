@@ -29,3 +29,17 @@ it('filters locally and preserves form drafts when the same revision is received
 it('refuses invalid replacement data without destroying the current valid panel',()=>{
  const {root,view}=fixture();view.receive(panel);expect(view.receive({...panel,revision:2,spec:{...panel.spec,script:'bad'}})).toBe(false);expect(root.querySelector('h1')?.textContent).toBe('מרכז בדיקה');
 });
+
+it('restores filters and form fields after remount without submitting actions',async()=>{
+ const {PanelViewStateService}=await import('../panel-view-state.service.js');let raw:string|null=null;
+ const storage={getItem:()=>raw,setItem:(_key:string,value:string)=>{raw=value;}};
+ const root=document.createElement('main');document.body.append(root);new LivePanelView(root,new PanelViewStateService(storage)).receive(panel);
+ const search=root.querySelector<HTMLInputElement>('input[type=search]')!;search.value='Roamies';search.dispatchEvent(new Event('input',{bubbles:true}));
+ const input=root.querySelector<HTMLInputElement>('input[name=name]')!;input.value='טיוטה בעברית';input.dispatchEvent(new Event('input',{bubbles:true}));
+ const selected=root.querySelector<HTMLSelectElement>('select')!;selected.value='מפורט';selected.dispatchEvent(new Event('change',{bubbles:true}));
+ const toggle=root.querySelector<HTMLInputElement>('input[type=checkbox]')!;toggle.checked=false;toggle.dispatchEvent(new Event('change',{bubbles:true}));
+ root.replaceChildren();const view=new LivePanelView(root,new PanelViewStateService(storage));view.receive({...panel,revision:2});
+ expect(root.querySelectorAll('tbody tr')).toHaveLength(1);expect(root.querySelector<HTMLInputElement>('input[name=name]')?.value).toBe('טיוטה בעברית');expect(root.querySelector('select')?.value).toBe('מפורט');expect(root.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked).toBe(false);expect(root.querySelector('.live-form-preview')?.textContent).toBe('');
+ const changed=structuredClone(panel);changed.revision=3;const form=changed.spec.blocks.find(block=>block.kind==='form')!;form.fields[0]!.label='משמעות חדשה';view.receive(changed);
+ expect(root.querySelector<HTMLInputElement>('input[name=name]')?.value).toBe('');
+});
