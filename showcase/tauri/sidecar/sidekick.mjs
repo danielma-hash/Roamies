@@ -12,6 +12,8 @@ import { DesktopDriverService } from './desktop-driver.service.ts';
 import { DesktopProcessService } from './desktop-process.service.ts';
 import { BrowserControlsService } from './browser-controls.service.ts';
 import { createBrowserControlTools } from './browser-control-tools.ts';
+import { LivePanelService } from './live-panel.service.ts';
+import { createLivePanelTool } from './live-panel-tool.ts';
 import { CapabilityRegistry } from './capability-registry.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
 import { localDockerProcess } from './docker-process.service.ts';
@@ -1381,6 +1383,8 @@ setInterval(() => {
 tools.push(...createWorkspaceTools({ sessions: claudeSessions, allowActions: () => config.allowActions && !recipeReadOnly, confirm: async (text, signal) => isYes(await ask({ placeholder: text, choices: ['Allow', "Don't allow"] }, signal)) }));
 const asmMemory = new AsmMemoryService();
 tools.push(createAsmTool(asmMemory));
+const livePanels = new LivePanelService();
+tools.push(createLivePanelTool(livePanels, () => { send({ type: 'session_center_show' }); panel(); }));
 const taskCards = new TaskCardsService(undefined, path.join(workspaceData, 'task-cards.json'));
 const pronunciation = new PronunciationDictionaryService({filePath:path.join(workspaceData,'pronunciation.json')});
 speech.setPronunciationDictionary((text) => pronunciation.apply(text));
@@ -1403,6 +1407,7 @@ function panel() {
     panelQueued = false;
     if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } });
     if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error, approval: sessionApproval.current() } } });
+    if (sessionCenterOpen && livePanels.snapshot()) send({ type: 'session_center', msg: { kind: 'live_panel', panel: livePanels.snapshot() } });
   });
 }
 const panelNote = (text, bad = false, p = null) => {
@@ -1879,6 +1884,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'live_panel_rendered') livePanels.markRendered(m.id, m.revision);
   else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
   else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionApproval.cancel(); }
   else if (m.type === 'session_center_approval' && typeof m.id === 'string' && typeof m.accepted === 'boolean') sessionApproval.answer(m.id, m.accepted);
