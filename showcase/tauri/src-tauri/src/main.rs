@@ -326,6 +326,7 @@ fn sidecar_send(app: AppHandle, window: WebviewWindow, msg: Value) {
 fn session_center_message_allowed(msg: &Value) -> bool {
     match msg.get("type").and_then(Value::as_str) {
         Some("session_center_open") => true,
+        Some("saved_panel_open") => msg.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36),
         Some("live_panel_rendered") => msg.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
             && msg.get("revision").and_then(Value::as_u64).is_some_and(|revision| revision > 0),
         Some("session_center_approval") => msg.get("id").and_then(Value::as_str).is_some_and(|id| id.len() == 36)
