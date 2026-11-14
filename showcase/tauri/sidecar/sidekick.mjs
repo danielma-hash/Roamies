@@ -10,6 +10,8 @@ import { ScopedApprovalService } from './scoped-approval.service.ts';
 import { WebReaderService } from './web-reader.service.ts';
 import { DesktopDriverService } from './desktop-driver.service.ts';
 import { DesktopProcessService } from './desktop-process.service.ts';
+import { BrowserControlsService } from './browser-controls.service.ts';
+import { createBrowserControlTools } from './browser-control-tools.ts';
 import { CapabilityRegistry } from './capability-registry.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
 import { localDockerProcess } from './docker-process.service.ts';
@@ -1345,7 +1347,15 @@ const browserTasks = browserDocker ? new BrowserTaskService({
   ownerId: createHash('sha256').update(workspaceData).digest('hex').slice(0, 16),
   hostSubnets: () => Object.values(os.networkInterfaces()).flatMap((values) => values ?? []).filter((value) => value.family === 'IPv4').map((value) => value.cidr ?? `${value.address}/32`),
 }) : undefined;
-if (browserTasks) tools.push(...createBrowserTools(browserTasks));
+if (browserTasks) {
+  tools.push(...createBrowserTools(browserTasks));
+  tools.push(...createBrowserControlTools(new BrowserControlsService({
+    inspect: (jobId, signal) => browserTasks.inspectControls(jobId, signal),
+    apply: (target, signal) => browserTasks.applyControl(target, signal),
+    read: (jobId, signal) => browserTasks.read({ jobId }, signal),
+    allowActions: () => config.allowActions && !recipeReadOnly, confirm: confirmClaudeControl,
+  })));
+}
 const desktopProcess = process.platform === 'darwin' && process.env.ROAMIES_DESKTOP && process.env.ROAMIES_DESKTOP_HELPER
   ? new DesktopProcessService(process.env.ROAMIES_DESKTOP, process.env.ROAMIES_DESKTOP_HELPER) : undefined;
 if (desktopProcess) tools.push(...createDesktopTools(new DesktopDriverService({

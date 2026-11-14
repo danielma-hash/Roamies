@@ -8,7 +8,7 @@ const descriptions: Readonly<Record<Family, string>> = {
   sessions: 'מרכז סשנים, היסטוריית Claude ושליטה בסשנים מנוהלים',
   memory: 'חיפוש ASM בתחום אישי או חברה וניהול עובדות אישיות',
   web: 'קריאת אתר ציבורי ממוקדת ללא דפדפן',
-  browser: 'קריאת אתרים הדורשים JavaScript בסביבת Browser Use מבודדת',
+  browser: 'קריאה ופעולות מאושרות באתרי JavaScript בסביבת Browser Use מבודדת',
   desktop: 'קריאה ופעולות בחלונות יישומים באמצעות Accessibility או תמונה',
   files: 'חיפוש, קריאה וכתיבת קבצים ופקודות מקומיות לפי מדיניות הבטיחות',
   commitments: 'רשימות, התחייבויות ותזכורות',

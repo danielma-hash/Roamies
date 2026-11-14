@@ -26,6 +26,14 @@ export function checkDesktopAction(action, policy, { allowActions = false, eleme
   return verdict(BLOCK, 'הפעולה אינה נתמכת ברכיב הזה.');
 }
 
+/** Isolated browser writes always require approval of the exact observed target. */
+export function checkBrowserAction(url, action, { allowActions = false, text } = {}) {
+  if (checkUrl(url).level !== SAFE || !String(url).startsWith('https://')) return verdict(BLOCK, 'פעולות דפדפן מותרות רק באתר HTTPS ציבורי.');
+  if (!allowActions) return verdict(BLOCK, 'פעולות כבויות בהגדרות.');
+  if (!['click', 'fill'].includes(action) || (action === 'fill' && (typeof text !== 'string' || text.length > 2000))) return verdict(BLOCK, 'פעולת דפדפן או טקסט לא תקינים.');
+  return verdict(ASK, 'נדרש אישור לפעולה המדויקת בדפדפן.');
+}
+
 // Secrets: keys, tokens, passwords, browser cookies and the keychain. Never read, never sent anywhere.
 const SECRET = [
   /(^|\/)\.ssh(\/|$)/, /(^|\/)\.gnupg(\/|$)/, /(^|\/)\.aws(\/|$)/, /(^|\/)\.azure(\/|$)/, /(^|\/)\.kube\/config$/,
