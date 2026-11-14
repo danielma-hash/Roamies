@@ -20,6 +20,10 @@ import { LivePanelService } from './live-panel.service.ts';
 import { LivePanelStoreService } from './live-panel-store.service.ts';
 import { createLivePanelTool, createSavedPanelTools } from './live-panel-tool.ts';
 import { CapabilityRegistry } from './capability-registry.ts';
+import { TaskRunService } from './task-run.service.ts';
+import { TaskRunStoreService } from './task-run-store.service.ts';
+import { TaskRunError } from './task-run-error.ts';
+import { createTaskRunTools } from './task-run-tools.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
 import { localDockerProcess } from './docker-process.service.ts';
 import { createBrowserTools } from './browser-tools.ts';
@@ -516,7 +520,7 @@ function makeAgent(cc) {
   const prior = forProvider(session?.messages ?? [], session?.provider, config.provider);
   if (session) { session.provider = config.provider; session.model = config.model; }
   agentRoute = cc ? 'claude-code' : 'api';
-  const selection = new CapabilityRegistry(tools, () => config.allowActions && !recipeReadOnly).forAgent(!cc);
+  const selection = new CapabilityRegistry(taskRuns.wrap(tools, () => activeTask, () => controller?.abort()), () => config.allowActions && !recipeReadOnly).forAgent(!cc);
   const common = {
     model: config.model,
     system: system(),
@@ -561,10 +565,22 @@ let credsBaseUrl;
 
 // One run at a time: a new request waits for (or interrupts) the current one. Folding waits until none is left.
 let queued = 0;
+let activeTask;
+let shuttingDown = false;
 function enqueue(text, { interrupt = false, image = null, note = '', byVoice = false, readOnly = false } = {}) {
+  if (shuttingDown) return Promise.resolve();
   if (interrupt && busy) interruptQuietly();
+  const accepted = taskRuns.create(text, !!image);
+  void accepted.catch(() => {}); // the queued consumer reports a checkpoint failure to the user
   queued++;
-  running = running.then(async () => { recipeReadOnly=readOnly;try{await prompt(text,image,note,byVoice);}finally{recipeReadOnly=false;} }).catch((e) => console.error('prompt', e))
+  running = running.then(async () => {
+    const task = await accepted;
+    if (shuttingDown) return;
+    activeTask = task.id; recipeReadOnly = readOnly;
+    try { await prompt(text, image, note, byVoice, task.id); }
+    catch (error) { await taskRuns.finish(task.id, 'failed').catch(() => {}); throw error; }
+    finally { activeTask = undefined; recipeReadOnly = false; }
+  }).catch((e) => { console.error('prompt', e); if (!shuttingDown) say(e instanceof TaskRunError ? e.message : 'הבקשה נכשלה לפני תחילת העבודה.', 'concerned'); })
     .finally(() => { if (--queued === 0) maybeCompact(); });
   return running;
 }
@@ -840,9 +856,11 @@ function holdWake(on) {
   if (MAC) send({ type: 'wake_hold', on });
 }
 const autoListenOn = () => VOICE_OK && !!config.voice && !!config.autoListen && voiceReady() && !intro;
-async function prompt(text, image = null, note = '', byVoice = false) {
+async function prompt(text, image = null, note = '', byVoice = false, taskId) {
   const readinessProblem = await readyAgent();
-  if (readinessProblem) return say(readinessProblem, 'concerned');
+  if (readinessProblem) { await taskRuns.finish(taskId, 'failed'); return say(readinessProblem, 'concerned'); }
+  if (shuttingDown) { await taskRuns.finish(taskId, 'interrupted'); return; }
+  await taskRuns.start(taskId, session?.id);
   busy = true; quiet = false; autoTurn = null;
   holdWake(true);
   if (!intro && !text.startsWith('(')) activity.asked(text);
@@ -958,15 +976,17 @@ async function prompt(text, image = null, note = '', byVoice = false) {
     // Asked by voice and answered with a question: the overlay opens the mic once the reply has been typed and said.
     const listen = byVoice && !stalled && !controller.signal.aborted && autoListenOn() && endsWithQuestion(lastReply) ? { turn, speech: voice?.id ?? null } : null;
     autoTurn = listen ? turn : null;
+    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'returned');
     ui({ kind: 'agent', e: stalled ? { type: 'error', message: stallMessage(), speech: voice?.id ?? null } : { type: 'done', speech: voice?.id ?? null, ...(listen ? { listen } : {}) } });
     logUsage({ ...use, ms: Date.now() - use.t });
     logLine('request_done', { turn, ms: Date.now() - use.t, calls: use.calls, tools: use.tools, in: use.in, cacheRead: use.cacheRead, cacheWrite: use.cacheWrite, out: use.out });
   } catch (err) {
+    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'failed').catch(() => {});
     lastFailed = true;
     if (controller.signal.aborted) voice?.abort(); else { spoken?.flush(); voice?.end(); }
     if (controller.signal.aborted && quiet) ui({ kind: 'agent', e: { type: 'done' } });
     else {
-      const msg = stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
+      const msg = err instanceof TaskRunError ? err.message : stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
       console.error('prompt failed', err);
       ui({ kind: 'agent', e: { type: 'error', message: msg, speech: voice?.id ?? null } });
     }
@@ -1356,6 +1376,10 @@ const confirmClaudeControl = (text, signal) => {
   return next;
 };
 const workspaceData = path.join(process.env.ROAMIES_DATA_DIR ?? path.join(HOME, '.gg'), 'sidekick');
+const taskRuns = new TaskRunService(new TaskRunStoreService(path.join(workspaceData, 'task-runs.json')));
+let taskRecoveryError;
+await taskRuns.initialize().catch((error) => { taskRecoveryError = error.message; });
+tools.push(...createTaskRunTools(taskRuns));
 const browserDocker = localDockerProcess();
 const browserTasks = browserDocker ? new BrowserTaskService({
   docker: (args, input, signal) => browserDocker.run(args, input, signal),
@@ -1452,7 +1476,7 @@ function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
   return {
-    workspace: {...workspace.snapshot(),managedSessions:claudeRuns.list(),managedSessionsError:claudeRecoveryError,health:evidenceHealth.snapshot(),currentConversationId:session?.id},
+    workspace: {...workspace.snapshot(),managedSessions:claudeRuns.list(),managedSessionsError:claudeRecoveryError,taskRecoveryError,health:evidenceHealth.snapshot(),currentConversationId:session?.id},
     version: VERSION, os: MAC ? 'mac' : process.platform === 'win32' ? 'win' : LINUX ? 'linux' : 'other', snap: SNAP_OK,
     // Wayland: shortcuts are commands bound in the desktop's settings (bind), and there's no Cursor size.
     wayland: WAYLAND, bind: HOTKEYS_OK ? null : BIND,
@@ -1994,12 +2018,14 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   else if (m.type === 'cli') onCli(String(m.action ?? '')).catch((e) => console.error('cli', e));
   else if (m.type === 'login_item_status') onLoginStatus(m);
 }).on('close', () => {
+  shuttingDown = true;
+  controller?.abort();
   // The app quit (or is restarting for an update): save a reply still running, let the last saves land, never hang.
   if (busy) syncSession();
   closeSpare();
   liveQueries.close();
   claudeRuns.close();
-  Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), livePanels.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
+  Promise.race([Promise.all([flushWrites(), taskRuns.interruptAll(), claudeRuns.flush(), livePanels.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });
 
 // Retired sign-ins (Claude from before Claude Code, the old ChatGPT, Kimi, Grok and Google ones) no longer work:
