@@ -119,6 +119,13 @@ export function redactArgs(name, args = {}) {
   return args;
 }
 
+/** Only canonical issue/PR reads on github.com; never arbitrary gh endpoints or commands. */
+export function checkGitHubRead(value) {
+  const match = typeof value === 'string' && value.match(/^https:\/\/github\.com\/([A-Za-z0-9_-]{1,100})\/([A-Za-z0-9_.-]{1,100})\/(pull|issues)\/([1-9][0-9]{0,9})$/);
+  if (!match || ['.', '..'].includes(match[2])) return verdict(BLOCK, 'נדרש קישור GitHub מדויק ל־issue או PR.');
+  return { ...verdict(SAFE), owner: match[1], repo: match[2], kind: match[3], number: Number(match[4]) };
+}
+
 /** read_file / list_files / search_files. Returns { level, reason, path }. */
 export function checkRead(p, home, { recursive = false } = {}) {
   home = slash(home);
