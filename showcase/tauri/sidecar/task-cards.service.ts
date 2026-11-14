@@ -11,8 +11,8 @@ export class TaskCardsError extends Error { constructor(message: string) { super
 export class TaskCardsService {
   private cards: readonly TaskCard[] = [];
   private updates: Promise<unknown> = Promise.resolve();
-  constructor(private readonly readPr: (repo: string, number: string) => Promise<string> = async (repo, number) => {
-    const result = await execute('gh', ['pr','view',number,'--repo',repo,'--json','title,url,state,headRefName,headRefOid,statusCheckRollup'], { timeout: 20_000, maxBuffer: 1024 * 1024 }); return result.stdout;
+  constructor(private readonly readPr: (repo: string, number: string, signal?:AbortSignal) => Promise<string> = async (repo, number, signal) => {
+    const result = await execute('gh', ['pr','view',number,'--repo',repo,'--json','title,url,state,headRefName,headRefOid,statusCheckRollup'], { signal, timeout: 20_000, maxBuffer: 1024 * 1024 }); return result.stdout;
   }, private readonly filePath?: string) {}
   async load(): Promise<void> {
     if (!this.filePath) return;
@@ -38,11 +38,11 @@ export class TaskCardsService {
     this.updates=queued.catch(()=>undefined);
     return queued;
   }
-  async read(url: string, monday?: string): Promise<TaskCard> {
+  async read(url: string, monday?: string, signal?:AbortSignal): Promise<TaskCard> {
     const match = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9][0-9]*)\/?$/.exec(url);
     if (!match) throw new TaskCardsError('יש להזין קישור GitHub תקין ל־PR.');
     if (monday && !/^https:\/\/[a-z0-9-]+\.monday\.com\/boards\/\d+\/pulses\/\d+\/?$/i.test(monday)) throw new TaskCardsError('קישור המשימה ב־Monday אינו תקין.');
-    try { const card = cardSchema.parse(JSON.parse(await this.readPr(match[1], match[2]))); return { ...card, observedAt: Date.now(), deployment: 'unknown', ...(monday ? { monday } : {}) }; }
+    try { const card = cardSchema.parse(JSON.parse(await this.readPr(match[1], match[2], signal))); return { ...card, observedAt: Date.now(), deployment: 'unknown', ...(monday ? { monday } : {}) }; }
     catch { throw new TaskCardsError('קריאת GitHub נכשלה. יש לבדוק ש־gh מותקן ומחובר לחשבון.'); }
   }
 }

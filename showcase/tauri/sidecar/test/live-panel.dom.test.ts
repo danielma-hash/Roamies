@@ -43,3 +43,12 @@ it('restores filters and form fields after remount without submitting actions',a
  const changed=structuredClone(panel);changed.revision=3;const form=changed.spec.blocks.find(block=>block.kind==='form')!;form.fields[0]!.label='משמעות חדשה';view.receive(changed);
  expect(root.querySelector<HTMLInputElement>('input[name=name]')?.value).toBe('');
 });
+
+it('updates live rows without remounting the filter, and ignores an obsolete panel revision',()=>{
+ const {root,view}=fixture();view.receive({...panel,spec:{title:'חי',blocks:[{kind:'query',id:'q',title:'סשנים',source:'sessions'}]}});
+ const message={kind:'live_query',panelId:panel.id,revision:1,blockId:'q',status:'ready',table:{columns:['שם'],rows:[['Alpha'],['Beta']],rowIds:['a','b'],observedAt:Date.now(),source:'fixture'}};
+ expect(view.receiveQuery(message)).toBe(true);const filter=root.querySelector<HTMLInputElement>('input[type=search]')!;filter.value='Alpha';filter.dispatchEvent(new Event('input',{bubbles:true}));
+ view.receiveQuery({...message,table:{...message.table,rows:[['Alpha updated'],['Beta']],observedAt:Date.now()}});
+ expect(root.querySelector('input[type=search]')).toBe(filter);expect(root.querySelectorAll('tbody tr')).toHaveLength(1);expect(root.querySelector('tbody')?.textContent).toBe('Alpha updated');
+ expect(view.receiveQuery({...message,revision:2})).toBe(false);view.receiveQuery({...message,status:'paused',table:undefined});expect(root.querySelector('table')).toBeNull();expect(root.textContent).toContain('מושהה');
+});

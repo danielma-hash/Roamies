@@ -7,7 +7,7 @@ it('validates targets before invoking gh and never equates merge or checks with 
   const read = vi.fn(async () => JSON.stringify({ title:'תיקון',url:'https://github.com/team/project/pull/1',state:'MERGED',headRefName:'fix',headRefOid:'abc',statusCheckRollup:[{conclusion:'SUCCESS'}] }));
   const service = new TaskCardsService(read);
   await expect(service.read('https://evil.invalid/a')).rejects.toThrow(); expect(read).not.toHaveBeenCalled();
-  const card = await service.read('https://github.com/team/project/pull/1'); expect(card.deployment).toBe('unknown'); expect(card.state).toBe('MERGED'); expect(read).toHaveBeenCalledWith('team/project','1');
+  const card = await service.read('https://github.com/team/project/pull/1'); expect(card.deployment).toBe('unknown'); expect(card.state).toBe('MERGED'); expect(read).toHaveBeenCalledWith('team/project','1',undefined);
 });
 
 it('persists both cards when polling and a user action track concurrently', async () => {
@@ -31,4 +31,9 @@ it('lets later queued updates proceed after one GitHub request fails', async () 
   const result = await Promise.allSettled([service.track('https://github.com/team/project/pull/1'), service.track('https://github.com/team/project/pull/2')]);
   expect(result.map(item => item.status)).toEqual(['rejected','fulfilled']);
   expect(service.list().map(card => card.url)).toEqual(['https://github.com/team/project/pull/2']);
+});
+
+it('passes cancellation to the GitHub read process',async()=>{
+ const signal=new AbortController().signal;const read=vi.fn(async()=>JSON.stringify({title:'fixture',url:'https://github.com/team/project/pull/1',state:'OPEN',headRefName:'fix',headRefOid:'abc',statusCheckRollup:[]}));
+ await new TaskCardsService(read).read('https://github.com/team/project/pull/1',undefined,signal);expect(read).toHaveBeenCalledWith('team/project','1',signal);
 });
