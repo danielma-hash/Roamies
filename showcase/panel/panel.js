@@ -534,7 +534,7 @@
   }
 
   // ---------------------------------------------------------------- render
-  const PANES = { home, memory, workspace: () => [window.RoamiesWorkspace.render(state.workspace ?? { available: true, sessions: [] }, send)], model: modelPage, appearance: appearancePage, voice: voicePage, behavior: behaviorPage };
+  const PANES = { home, memory, workspace: () => [btn('פתיחה בחלון עבודה', () => act('session_center')), window.RoamiesWorkspace.render(state.workspace ?? { available: true, sessions: [] }, send)], model: modelPage, appearance: appearancePage, voice: voicePage, behavior: behaviorPage };
   // focusKey: what to focus after (a data-k, or an element id); otherwise whatever had focus keeps it.
   function render(focusKey, animate = false) {
     if (!state) return;

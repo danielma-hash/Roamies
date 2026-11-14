@@ -35,6 +35,7 @@ static SIDEKICK_OVERLAY: Mutex<Option<String>> = Mutex::new(None);
 static ONBOARDING: AtomicBool = AtomicBool::new(false);
 const ONBOARDING_LABEL: &str = "onboarding";
 const PANEL_LABEL: &str = "panel";
+const SESSION_CENTER_LABEL: &str = "session-center";
 /// When the panel last hid because it lost focus: a click on the icon that caused it mustn't reopen it.
 static PANEL_BLURRED: Mutex<Option<Instant>> = Mutex::new(None);
 /// Counts opens, so a close that's still playing its animation can tell it was opened again and stay up.
@@ -317,8 +318,44 @@ fn to_sidekick_buddy(app: &AppHandle, msg: &Value) {
 }
 
 #[tauri::command]
-fn sidecar_send(app: AppHandle, msg: Value) {
+fn sidecar_send(app: AppHandle, window: WebviewWindow, msg: Value) {
+    if window.label() == SESSION_CENTER_LABEL && !session_center_message_allowed(&msg) { return; }
     to_sidecar(&app, &msg);
+}
+
+fn session_center_message_allowed(msg: &Value) -> bool {
+    match msg.get("type").and_then(Value::as_str) {
+        Some("session_center_open") => true,
+        Some("workspace") => matches!(msg.get("action").and_then(Value::as_str),
+            Some("sessions.list" | "claude_control_start" | "claude_control_send" | "claude_control_resume" | "claude_control_stop")),
+        _ => false,
+    }
+}
+
+fn show_session_center(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(SESSION_CENTER_LABEL) {
+        let _ = window.show(); let _ = window.set_focus();
+        to_sidecar(app, &json!({ "type": "session_center_open" }));
+        return;
+    }
+    let result = WebviewWindowBuilder::new(app, SESSION_CENTER_LABEL, WebviewUrl::App("workspace/index.html".into()))
+        .title("ג׳ארוויס — מרכז הסשנים")
+        .inner_size(1080.0, 760.0).min_inner_size(540.0, 480.0)
+        .resizable(true).decorations(true)
+        .on_navigation(|url| {
+            matches!(url.scheme(), "tauri" | "http" | "https")
+                && matches!(url.host_str(), Some("localhost" | "tauri.localhost"))
+                && url.path() == "/workspace/index.html"
+        }).build();
+    match result {
+        Ok(window) => {
+            let app = app.clone();
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Destroyed) { to_sidecar(&app, &json!({ "type": "session_center_closed" })); }
+            });
+        }
+        Err(error) => eprintln!("session center failed to open: {error}"),
+    }
 }
 
 /// The input bubble needs keystrokes: make the overlay key while typing, then hand focus back.
@@ -1433,6 +1470,12 @@ fn handle_sidecar(app: &AppHandle, msg: Value) {
             }
         }
         Some("panel_show") => show_panel(app, None, false),
+        Some("session_center_show") => show_session_center(app),
+        Some("session_center") => {
+            if let (Some(window), Some(message)) = (app.get_webview_window(SESSION_CENTER_LABEL), msg.get("msg")) {
+                let _ = window.eval(format!("window.__sessionCenter&&__sessionCenter({message})"));
+            }
+        }
         Some("diagnostics") => {
             let app = app.clone();
             thread::spawn(move || to_sidecar(&app, &diagnostics(&app)));
@@ -1524,11 +1567,11 @@ fn handle_sidecar(app: &AppHandle, msg: Value) {
     }
 }
 
-/// What a second launch asks the running app to do: `roamies --summon | --list | --talk | --ask | --panel`. They're
+/// What a second launch asks the running app to do: `roamies --summon | --list | --talk | --ask | --panel | --workspace`. They're
 /// for binding to keys in the desktop's keyboard settings, the one kind of global shortcut Wayland lets every app
 /// have. None: a plain launch.
 fn cli_action(args: &[String]) -> Option<&'static str> {
-    const ACTIONS: [&str; 5] = ["summon", "list", "talk", "ask", "panel"];
+    const ACTIONS: [&str; 6] = ["summon", "list", "talk", "ask", "panel", "workspace"];
     args.iter().skip(1).find_map(|a| ACTIONS.into_iter().find(|f| a.strip_prefix("--") == Some(*f)))
 }
 
@@ -1538,6 +1581,7 @@ fn second_launch(app: &AppHandle, args: &[String]) {
     match cli_action(args) {
         Some("summon") => to_overlays(app, &json!({ "kind": "summon" })),
         Some("panel") => show_panel(app, None, false),
+        Some("workspace") => show_session_center(app),
         // The sidecar's to do: it knows whether voice is on and ready, and owns the ask bubble and the list.
         Some(action) => to_sidecar(app, &json!({ "type": "cli", "action": action })),
         None if cfg!(target_os = "linux") => show_panel(app, None, false),
@@ -1610,6 +1654,7 @@ fn main() {
             #[cfg(target_os = "macos")]
             snapshot::watch_screenshots(app.handle().clone());
             spawn_sidecar(app.handle());
+            if cli_action(&std::env::args().collect::<Vec<_>>()) == Some("workspace") { show_session_center(app.handle()); }
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -1626,10 +1671,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn session_window_only_sends_scoped_session_messages() {
+        assert!(session_center_message_allowed(&json!({"type":"session_center_open"})));
+        for action in ["sessions.list", "claude_control_start", "claude_control_send", "claude_control_resume", "claude_control_stop"] {
+            assert!(session_center_message_allowed(&json!({"type":"workspace", "action":action})));
+        }
+        for message in [json!({"type":"menu", "id":"quit"}), json!({"type":"workspace", "action":"asm.search"}), json!({"type":"answer", "text":"yes"}), json!({"type":"config"}), Value::Null] {
+            assert!(!session_center_message_allowed(&message));
+        }
+    }
+
+    #[test]
     fn a_second_launch_says_what_it_wants_with_one_flag() {
         let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(cli_action(&args(&["roamies"])), None, "a plain launch");
-        for f in ["summon", "list", "talk", "ask", "panel"] {
+        for f in ["summon", "list", "talk", "ask", "panel", "workspace"] {
             assert_eq!(cli_action(&args(&["/usr/bin/roamies", &format!("--{f}")])), Some(f));
         }
         assert_eq!(cli_action(&args(&["roamies", "--verbose", "--talk"])), Some("talk"), "other arguments are skipped");
