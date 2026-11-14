@@ -18,3 +18,20 @@ it('does not invoke a source after cancellation',async()=>{
  const list=vi.fn();const provider=new LiveQueryProviderService({list},runs,{list:()=>[],read:vi.fn()},attention);
  await expect(provider.read('sessions','',AbortSignal.abort())).rejects.toThrow();expect(list).not.toHaveBeenCalled();
 });
+it('shows persisted task progress without equating returned calls with verified success',async()=>{
+ const tasks={initialize:async()=>{},flush:async()=>{},list:()=>[
+  {id:'older',request:'בדיקת תור',hasImage:false,status:'returned' as const,verified:false as const,createdAt:1,updatedAt:1,tools:[{id:'a',name:'read',argsDigest:'a'.repeat(64),status:'returned' as const}]},
+  {id:'newer',request:'בדיקת ניתוק',hasImage:false,status:'interrupted' as const,verified:false as const,createdAt:1,updatedAt:2,tools:[{id:'b',name:'write',argsDigest:'b'.repeat(64),status:'unknown' as const}]},
+ ]};
+ const provider=new LiveQueryProviderService(sessions,runs,{list:()=>[],read:vi.fn()},attention,tasks);
+ const table=await provider.read('tasks','בדיקת',signal);
+ expect(table.rowIds).toEqual(['newer','older']);expect(table.rows[0]?.slice(1,4)).toEqual(['נקטעה','0/1 חזרו','כן']);
+ expect(table.rows[1]?.[1]).toBe('התקבלה תשובה');expect(table.source).toContain('אינה אימות');
+ expect(JSON.stringify(table)).not.toContain('argsDigest');expect((await provider.read('tasks','תור',signal)).rowIds).toEqual(['older']);
+});
+it('surfaces unavailable/corrupt task storage rather than an empty success table',async()=>{
+ const absent=new LiveQueryProviderService(sessions,runs,{list:()=>[],read:vi.fn()},attention);
+ await expect(absent.read('tasks','',signal)).rejects.toThrow('אינו מחובר');
+ const list=vi.fn(()=>[]);const corrupt=new LiveQueryProviderService(sessions,runs,{list:()=>[],read:vi.fn()},attention,{list,initialize:async()=>{},flush:async()=>{throw new Error('storage');}});
+ await expect(corrupt.read('tasks','',signal)).rejects.toThrow('storage');expect(list).not.toHaveBeenCalled();
+});

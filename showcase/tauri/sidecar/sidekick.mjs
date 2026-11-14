@@ -1439,7 +1439,7 @@ async function resumeConversation(id) {
   session=selected;liveBlocks.clear();agent=null;pendingFold=null;lastInput=null;quizDone=null;menu();
 }
 const attentionService = new AttentionService({filePath:path.join(workspaceData,'attention.json')});
-const queryProvider = new LiveQueryProviderService(claudeSessions, claudeRuns, taskCards, attentionService);
+const queryProvider = new LiveQueryProviderService(claudeSessions, claudeRuns, taskCards, attentionService, taskRuns);
 const panelActions = new PanelActionService(() => livePanels.snapshot(), () => sessionCenterOpen && config.liveQueries !== false, (id) => {
   const run = claudeRuns.list().find((run) => run.id === id);
   return !run || ['stopped','failed','interrupted'].includes(run.state) ? ['resume'] : ['send','stop'];

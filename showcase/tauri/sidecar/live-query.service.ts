@@ -33,7 +33,7 @@ export class LiveQueryService {
  }
  private async refresh(panel:LivePanelEnvelope,block:LiveQueryBlock,key:string,generation:number):Promise<void>{
   if(generation!==this.generation||!this.active||!this.allowed())return;
-  this.nextAllowed.set(block.source,Date.now()+(block.source==='prs'?60_000:30_000));
+  this.nextAllowed.set(block.source,Date.now()+(block.source==='tasks'?3_000:block.source==='prs'?60_000:30_000));
   const controller=new AbortController();this.controllers.add(controller);
   let timeout:ReturnType<typeof setTimeout>|undefined;let abort:(()=>void)|undefined;
   try{
