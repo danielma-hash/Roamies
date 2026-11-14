@@ -12,7 +12,7 @@ const descriptions: Readonly<Record<Family, string>> = {
   desktop: 'קריאה ופעולות בחלונות יישומים באמצעות Accessibility או תמונה',
   files: 'חיפוש, קריאה וכתיבת קבצים ופקודות מקומיות לפי מדיניות הבטיחות',
   commitments: 'רשימות, התחייבויות ותזכורות',
-  visuals: 'קריאת תמונה והצגת הסבר חזותי',
+  visuals: 'תמונה, טבלה, גרף, טופס, לוח ותרשים במרחב העבודה',
 };
 const requirements: Readonly<Record<Family, readonly string[]>> = {
   core: ['Roamies UI'], sessions: ['Claude local history; Claude CLI and sign-in for managed runs; exact action approval'],
@@ -30,7 +30,7 @@ function familyOf(name: string): Family {
   if (name.startsWith('desktop_') || ['take_screenshot','list_windows','read_window','act_in_app'].includes(name)) return 'desktop';
   if (['read_file','list_files','search_files','write_file','run_command'].includes(name)) return 'files';
   if (['remember_commitment','update_commitment','list_commitments'].includes(name)) return 'commitments';
-  if (name === 'see_photo') return 'visuals';
+  if (name === 'see_photo' || name.startsWith('live_panel_')) return 'visuals';
   return 'core';
 }
 export class CapabilityRegistryError extends Error { override readonly name = 'CapabilityRegistryError'; }

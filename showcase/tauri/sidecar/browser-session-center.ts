@@ -1,3 +1,4 @@
+import { LivePanelView } from './browser-live-panel.js';
 import { renderClaudeControl, renderClaudeInstruction } from './browser-claude-control.js';
 import type { ClaudeControlAction } from './browser-claude-control.js';
 import { sessionAction, sessionRows, SESSION_LABELS } from './session-center.model.js';
@@ -155,6 +156,24 @@ const root = document.getElementById('session-center');
 const invoke = window.__TAURI__?.core?.invoke;
 if (root && invoke) {
   const store = new SessionViewStore({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
-  const view = new SessionCenterView(root, invoke, store); window.__sessionCenter = (message) => view.receive(message);
+  const tabs = node('nav', '', 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'תצוגת מרחב העבודה');
+  const sessions = node('section', '', 'workspace-pane'); const panels = node('section', '', 'workspace-pane');
+  sessions.id = 'workspace-sessions'; panels.id = 'workspace-panels';
+  sessions.setAttribute('role', 'tabpanel'); panels.setAttribute('role', 'tabpanel');
+  const select = (name: 'sessions' | 'panels'): void => {
+    sessions.hidden = name !== 'sessions'; panels.hidden = name !== 'panels';
+    tabs.querySelectorAll<HTMLButtonElement>('button').forEach((tab) => { const active = tab.dataset.view === name; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; });
+  };
+  for (const [name, title] of [['sessions', 'סשנים'], ['panels', 'מסכים']] as const) {
+    const tab = button(title, () => select(name)); tab.id = `tab-${name}`; tab.dataset.view = name; tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `workspace-${name}`); tabs.append(tab);
+    (name === 'sessions' ? sessions : panels).setAttribute('aria-labelledby', tab.id);
+    tab.addEventListener('keydown', (event) => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 'sessions' : event.key === 'End' ? 'panels' : name === 'sessions' ? 'panels' : 'sessions'; select(next); tabs.querySelector<HTMLButtonElement>(`[data-view=${next}]`)?.focus(); });
+  }
+  root.append(tabs, sessions, panels); select('sessions');
+  const view = new SessionCenterView(sessions, invoke, store); const live = new LivePanelView(panels);
+  window.__sessionCenter = (message) => {
+    if (record(message) && message.kind === 'live_panel') { if (live.receive(message.panel)) { select('panels'); const receipt = live.receipt(); if (receipt) requestAnimationFrame(() => { void invoke('sidecar_send', { msg: { type: 'live_panel_rendered', ...receipt } }).catch(() => {}); }); } }
+    else { view.receive(message); if (record(message) && record(message.snapshot) && message.snapshot.approval) select('sessions'); }
+  };
   void invoke('sidecar_send', { msg: { type: 'session_center_open' } });
 } else if (root) root.textContent = 'מרכז העבודה מתחבר מתוך אפליקציית Roamies.';
