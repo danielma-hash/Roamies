@@ -162,7 +162,11 @@ if (root && invoke) {
   const sessions = node('section', '', 'workspace-pane'); const panels = node('section', '', 'workspace-pane');
   sessions.id = 'workspace-sessions'; panels.id = 'workspace-panels';
   sessions.setAttribute('role', 'tabpanel'); panels.setAttribute('role', 'tabpanel');
+  let activeView: 'sessions' | 'panels' = 'sessions';
+  const visibility = (): void => { void invoke('sidecar_send', { msg: { type: 'live_query_visibility', visible: activeView === 'panels' && !document.hidden } }).catch(() => {}); };
+  document.addEventListener('visibilitychange', visibility);
   const select = (name: 'sessions' | 'panels'): void => {
+    activeView = name; visibility();
     sessions.hidden = name !== 'sessions'; panels.hidden = name !== 'panels';
     tabs.querySelectorAll<HTMLButtonElement>('button').forEach((tab) => { const active = tab.dataset.view === name; tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1; });
   };
@@ -174,10 +178,11 @@ if (root && invoke) {
   root.append(tabs, sessions, panels); select('sessions');
   const view = new SessionCenterView(sessions, invoke, store);
   const libraryRoot = node('div'); const displayRoot = node('div'); panels.append(libraryRoot, displayRoot);
-  const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }));
+  const library = new PanelLibraryView(libraryRoot, (id) => invoke('sidecar_send', { msg: { type: 'saved_panel_open', id } }), (enabled) => invoke('sidecar_send', { msg: { type: 'live_query_enabled', enabled } }));
   const live = new LivePanelView(displayRoot, new PanelViewStateService({ getItem: (key) => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) }));
   window.__sessionCenter = (message) => {
-    if (record(message) && message.kind === 'live_panel_library') library.receive(message);
+    if (record(message) && message.kind === 'live_query') live.receiveQuery(message);
+    else if (record(message) && message.kind === 'live_panel_library') library.receive(message);
     else if (record(message) && message.kind === 'live_panel') {
       if (live.receive(message.panel) || message.focus === true) select('panels');
       const receipt = live.receipt();

@@ -12,6 +12,8 @@ import { DesktopDriverService } from './desktop-driver.service.ts';
 import { DesktopProcessService } from './desktop-process.service.ts';
 import { BrowserControlsService } from './browser-controls.service.ts';
 import { createBrowserControlTools } from './browser-control-tools.ts';
+import { LiveQueryService } from './live-query.service.ts';
+import { LiveQueryProviderService } from './live-query-provider.service.ts';
 import { LivePanelService } from './live-panel.service.ts';
 import { LivePanelStoreService } from './live-panel-store.service.ts';
 import { createLivePanelTool, createSavedPanelTools } from './live-panel-tool.ts';
@@ -1402,7 +1404,13 @@ async function resumeConversation(id) {
   if(session?.messages.length){const saved=await conversationHistory.read(session.id);if(JSON.stringify(saved.messages)!==JSON.stringify(session.messages))throw new Error('שמירת השיחה הנוכחית טרם הושלמה. לא בוצע מעבר.');}
   session=selected;liveBlocks.clear();agent=null;pendingFold=null;lastInput=null;quizDone=null;menu();
 }
-const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, new AttentionService({filePath:path.join(workspaceData,'attention.json')}), (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}}, (text)=>enqueue(text,{readOnly:true}),conversationHistory,resumeConversation);
+const attentionService = new AttentionService({filePath:path.join(workspaceData,'attention.json')});
+const queryProvider = new LiveQueryProviderService(claudeSessions, claudeRuns, taskCards, attentionService);
+const liveQueries = new LiveQueryService((source, query, signal) => queryProvider.read(source, query, signal), (msg) => send({type:'session_center',msg}), () => config.liveQueries !== false);
+let liveQueryVisible = false;
+let sessionCenterFocused = false;
+const syncLiveQueries = () => liveQueries.activate(livePanels.snapshot(), sessionCenterOpen && sessionCenterFocused && liveQueryVisible);
+const workspace = new WorkspaceController(claudeSessions, () => panel(), new ClaudeHooksService({ nodePath: process.execPath, scriptPath: fileURLToPath(new URL('./claude-events.mjs', import.meta.url)) }), asmMemory, taskCards, attentionService, (events) => { if(!busy)say(`יש ${events.length} עדכונים חדשים במרכז העבודה.`, 'happy'); }, {dictionary:pronunciation,review:()=>!!config.reviewTranscript,setReview:(on)=>{config.reviewTranscript=on;saveConfig();},previewAudio:(text)=>{const turn=speech.start();if(!turn)throw new Error('Cartesia אינו מחובר.');turn.say(text);turn.end();},correct:(text)=>{const area=reviewedArea;reviewedArea=null;onSpoken(text,area);}}, (text)=>enqueue(text,{readOnly:true}),conversationHistory,resumeConversation);
 workspace.initialize().then(() => workspace.poll());
 setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
@@ -1412,8 +1420,9 @@ function panel() {
     panelQueued = false;
     if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } });
     if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error, approval: sessionApproval.current() } } });
-    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'live_panel_library', selectedId: livePanels.snapshot()?.id, panels: livePanels.list(), error: livePanelError } });
+    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'live_panel_library', selectedId: livePanels.snapshot()?.id, panels: livePanels.list(), error: livePanelError, queriesEnabled: config.liveQueries !== false } });
     if (sessionCenterOpen && livePanels.snapshot()) { send({ type: 'session_center', msg: { kind: 'live_panel', panel: livePanels.snapshot(), focus: livePanelFocus } }); livePanelFocus = false; }
+    syncLiveQueries();
   });
 }
 const panelNote = (text, bad = false, p = null) => {
@@ -1890,10 +1899,13 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'session_center_focus') { sessionCenterFocused = m.focused === true; syncLiveQueries(); }
+  else if (m.type === 'live_query_visibility' && typeof m.visible === 'boolean') { liveQueryVisible = m.visible; syncLiveQueries(); }
+  else if (m.type === 'live_query_enabled' && typeof m.enabled === 'boolean') { config.liveQueries = m.enabled; saveConfig(); syncLiveQueries(); panel(); }
   else if (m.type === 'saved_panel_open' && typeof m.id === 'string') { livePanels.open(m.id).then(() => { livePanelError = undefined; showLivePanel(); }).catch((error) => { livePanelError = error.message; panel(); }); }
   else if (m.type === 'live_panel_rendered') livePanels.markRendered(m.id, m.revision);
   else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
-  else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionApproval.cancel(); }
+  else if (m.type === 'session_center_closed') { sessionCenterOpen = false; sessionCenterFocused = false; liveQueryVisible = false; liveQueries.close(); sessionApproval.cancel(); }
   else if (m.type === 'session_center_approval' && typeof m.id === 'string' && typeof m.accepted === 'boolean') sessionApproval.answer(m.id, m.accepted);
   else if (m.type === 'workspace') {
     const receipt = (error, cancelled = false) => {
@@ -1965,6 +1977,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   // The app quit (or is restarting for an update): save a reply still running, let the last saves land, never hang.
   if (busy) syncSession();
   closeSpare();
+  liveQueries.close();
   claudeRuns.close();
   Promise.race([Promise.all([flushWrites(), claudeRuns.flush(), livePanels.flush(), desktopProcess?.close(), browserTasks?.closeAll()]), new Promise((r) => setTimeout(r, 3000))]).finally(() => process.exit(0));
 });

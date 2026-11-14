@@ -1,3 +1,4 @@
+import {liveQueryMessageSchema} from './live-query.schema.js';
 import type {PanelViewStateService} from './panel-view-state.service.js';
 import { livePanelEnvelopeSchema } from './live-panel.schema.js';
 import type { LiveBlock,LivePanelEnvelope } from './live-panel.types.js';
@@ -9,22 +10,37 @@ const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,
 /** Closed component catalog. All model strings are text, never DOM markup or executable attributes. */
 export class LivePanelView {
  private current?:LivePanelEnvelope;
+ private readonly queryViews=new Map<string,{status:HTMLElement;content:HTMLElement;signature?:string;update?: (rows:(string|number|boolean)[][])=>void}>();
  constructor(private readonly root:HTMLElement,private readonly state?:PanelViewStateService){root.classList.add('live-panel-root');root.append(el('h1','המסך הבא מתחיל בבקשה שלך'),el('p','אפשר לבקש מג׳ארוויס טבלת השוואה, גרף, לוח עבודה או תרשים.','freshness'));}
  receive(input:unknown):boolean {
   const parsed=livePanelEnvelopeSchema.safeParse(input);
   if(!parsed.success)return false;
   const panel=parsed.data;if(this.current?.id===panel.id&&this.current.revision===panel.revision)return false;
-  this.current=panel;const header=el('header');const titles=el('div');titles.append(el('p','JARVIS / מסך עבודה','eyebrow'),el('h1',panel.spec.title));
+  this.current=panel;this.queryViews.clear();const header=el('header');const titles=el('div');titles.append(el('p','JARVIS / מסך עבודה','eyebrow'),el('h1',panel.spec.title));
   if(panel.spec.subtitle)titles.append(el('p',panel.spec.subtitle,'live-subtitle'));header.append(titles);
   const meta=el('p',`גרסה ${panel.revision} · עודכן ב־${new Date(panel.updatedAt??panel.createdAt).toLocaleString('he-IL')}`,'freshness');
   const grid=el('div','','live-grid');for(const block of panel.spec.blocks)grid.append(this.block(block,panel.id));
-  const source=el('p',panel.spec.sourceNote??'המידע מוצג כפי שנמסר. המסך אינו מתרענן ממקור חיצוני.','live-source');
+  const source=el('p',panel.spec.sourceNote??(panel.spec.blocks.some(block=>block.kind==='query')?'רכיבי הנתונים החיים מתעדכנים לפי המקור והזמן המוצגים לידם.':'המידע מוצג כפי שנמסר. המסך אינו מתרענן ממקור חיצוני.'),'live-source');
   this.root.replaceChildren(header,meta,grid,source);return true;
+ }
+ receiveQuery(input:unknown):boolean{
+  const parsed=liveQueryMessageSchema.safeParse(input);if(!parsed.success)return false;const message=parsed.data;
+  if(message.panelId!==this.current?.id||message.revision!==this.current?.revision)return false;
+  const view=this.queryViews.get(message.blockId);if(!view)return false;
+  const labels={loading:'טוען נתונים…',ready:'מעודכן',stale:'נתונים קודמים — נדרש רענון',error:'לא ניתן לטעון נתונים',paused:'העדכון החי מושהה'};
+  view.status.textContent=`${labels[message.status]}${message.table?` · ${message.table.source} · ${new Date(message.table.observedAt).toLocaleString('he-IL')}`:''}${message.error?` · ${message.error}`:''}`;
+  if(message.table){
+   const signature=JSON.stringify(message.table.columns);
+   if(view.signature!==signature){view.content.replaceChildren();view.update=this.table(view.content,{kind:'table',id:message.blockId,title:'נתונים חיים',columns:message.table.columns,rows:message.table.rows},message.panelId);view.signature=signature;}
+   else view.update?.(message.table.rows);
+  }else{view.content.replaceChildren();view.signature=undefined;view.update=undefined;}
+  return true;
  }
  receipt():{id:string;revision:number}|undefined{return this.current?{id:this.current.id,revision:this.current.revision}:undefined;}
  private block(block:LiveBlock,panelId:string):HTMLElement {
   const section=el('section','',`live-block live-${block.kind}`);section.dataset.block=block.id;
   const heading=el('h2',block.title);heading.id=`live-${panelId}-${block.id}`;section.setAttribute('aria-labelledby',heading.id);section.append(heading);
+  if(block.kind==='query'){const status=el('p','ממתין לחיבור נתונים חיים…','freshness');status.setAttribute('role','status');const content=el('div');section.append(status,content);this.queryViews.set(block.id,{status,content});}
   if(block.kind==='text')section.append(el('p',block.body,'live-copy'));
   if(block.kind==='table')this.table(section,block,panelId);
   if(block.kind==='bar'){
@@ -38,14 +54,14 @@ export class LivePanelView {
   if(block.kind==='flow')this.flow(section,block,panelId);
   return section;
  }
- private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>,panelId:string):void {
+ private table(section:HTMLElement,block:Extract<LiveBlock,{kind:'table'}>,panelId:string):(rows:(string|number|boolean)[][])=>void {
   const search=el('input');search.type='search';search.placeholder='סינון הטבלה';search.maxLength=100;search.setAttribute('aria-label',`סינון ${block.title}`);search.dir='auto';
   const signature=JSON.stringify(['table',block.columns]);search.value=this.state?.read(panelId,block.id,signature)?.query?.slice(0,100)??'';
   const saved=el('p',this.state?.error??'','freshness');saved.setAttribute('role','status');
   const scroller=el('div','','live-table-scroll');const table=el('table');const head=el('thead');const row=el('tr');for(const title of block.columns){const cell=el('th',title);cell.scope='col';cell.dir='auto';row.append(cell);}head.append(row);
   const body=el('tbody');table.append(head,body);scroller.append(table);const count=el('p','','freshness');count.setAttribute('role','status');
-  const render=():void=>{const query=search.value.toLocaleLowerCase();const rows=block.rows.filter(values=>values.some(value=>cellText(value).toLocaleLowerCase().includes(query)));body.replaceChildren();for(const values of rows){const row=el('tr');for(const value of values){const cell=el('td',cellText(value));cell.dir='auto';row.append(cell);}body.append(row);}count.textContent=`${rows.length} מתוך ${block.rows.length} שורות`;};
-  search.addEventListener('input',()=>{render();this.state?.save(panelId,block.id,signature,{query:search.value.slice(0,100)});saved.textContent=this.state?.error??'';});section.append(search,scroller,count,saved);render();
+  let data=block.rows;const render=():void=>{const query=search.value.toLocaleLowerCase();const rows=data.filter(values=>values.some(value=>cellText(value).toLocaleLowerCase().includes(query)));body.replaceChildren();for(const values of rows){const row=el('tr');for(const value of values){const cell=el('td',cellText(value));cell.dir='auto';row.append(cell);}body.append(row);}count.textContent=`${rows.length} מתוך ${data.length} שורות`;};
+  search.addEventListener('input',()=>{render();this.state?.save(panelId,block.id,signature,{query:search.value.slice(0,100)});saved.textContent=this.state?.error??'';});section.append(search,scroller,count,saved);render();return (rows)=>{data=rows;render();};
  }
  private form(section:HTMLElement,block:Extract<LiveBlock,{kind:'form'}>,panelId:string):void {
   const form=el('form');const inputs=new Map<string,HTMLInputElement|HTMLSelectElement>();
