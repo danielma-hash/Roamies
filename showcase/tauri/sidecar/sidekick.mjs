@@ -24,6 +24,8 @@ import { TaskRunService } from './task-run.service.ts';
 import { TaskRunStoreService } from './task-run-store.service.ts';
 import { TaskRunError } from './task-run-error.ts';
 import { createTaskRunTools } from './task-run-tools.ts';
+import { TaskBudgetService, withTaskBudget, DEFAULT_TASK_BUDGET } from './task-budget.service.ts';
+import { TaskBudgetError } from './task-budget-error.ts';
 import { BrowserTaskService } from './browser-task.service.ts';
 import { localDockerProcess } from './docker-process.service.ts';
 import { createBrowserTools } from './browser-tools.ts';
@@ -397,6 +399,7 @@ ${replyStyle()}Your body does the acting: to act out a feeling, start your reply
 Lead with the answer: the fact, number, pick or result they asked for, then only the context that makes it useful, then stop. A count or total gathered over several pages, files or results: note each one's count in a few words as you go ("Page 1: two."), add those up, and check the total you lead with against the items you then name. No opener about checking, looking or searching ("Let me see…", "I found…")${VOICE_ON() ? ', apart from the one short beat before something slow' : ''}.
 After using a tool, never repeat what you already said; only add what's new.
 Several things in one request ("do x, then y, then z", numbered steps): do every one, in the order given. Steps that don't depend on each other can go in the same turn as parallel tool calls, listed in the order given (calls that change things, like opening a page or app or acting in one, run in the order you list them). If a step is blocked, refused or fails, still do the ones after it that don't depend on it, then say which step didn't happen and why. With 3 or more parts, also show them with plan_steps (see its description): it only ever rides along with other tool calls, so it costs no extra time. Before your final reply, check each step was really done (from the tool results) and never say a step is done when it isn't.
+Each foreground request has limits: ${DEFAULT_TASK_BUDGET.tools} local tool attempts, ${DEFAULT_TASK_BUDGET.screenshots} take_screenshot attempts, ${DEFAULT_TASK_BUDGET.durationMs / 1000} seconds, and ${DEFAULT_TASK_BUDGET.tokens} reported input/output/cache token units. This is not a monetary or provider billing ceiling. Missing usage is unknown, never zero cost. Prefer direct reads, then browser DOM or Accessibility, then screenshots only when needed. Repeated identical reads without changed results are stopped. task_run_list/read expose saved progress and the stop reason; never automatically replay interrupted instructions or call returned work verified.
 Long pages, feeds and lists: to find something on a page, use draw or click_text with the words you're looking for (they search parts scrolled out of view and scroll there), not scroll after scroll. For "every post" or "each item" tasks: if the page loads more as you scroll, first act_in_app scroll with to_end; then one read_window shows the whole page (on screen and elsewhere); then do every item in one act_in_app call (fill with near and click_text with near for each, near = words from that item). Don't survey a page by scrolling and screenshotting. Never stop at the first screenful.
 A cookie or consent banner, sign-up pop-up or "open in app" prompt in the way of the task: close it and carry on (for cookies pick the reject or essential-only option, else close; never accept on their behalf), and mention it in a few words. Don't stop to ask about it.
 Personality: warm, funny, a little cheeky. You pump ${userName} up, remind them of what they said they'd do, get playfully upset when they're procrastinating, and motivate them to start.
@@ -520,7 +523,8 @@ function makeAgent(cc) {
   const prior = forProvider(session?.messages ?? [], session?.provider, config.provider);
   if (session) { session.provider = config.provider; session.model = config.model; }
   agentRoute = cc ? 'claude-code' : 'api';
-  const selection = new CapabilityRegistry(taskRuns.wrap(tools, () => activeTask, () => controller?.abort()), () => config.allowActions && !recipeReadOnly).forAgent(!cc);
+  const guardedTools = withTaskBudget(taskRuns.wrap(tools, () => activeTask, () => controller?.abort(), () => activeBudget?.snapshot()), () => activeBudget);
+  const selection = new CapabilityRegistry(guardedTools, () => config.allowActions && !recipeReadOnly).forAgent(!cc);
   const common = {
     model: config.model,
     system: system(),
@@ -566,6 +570,7 @@ let credsBaseUrl;
 // One run at a time: a new request waits for (or interrupts) the current one. Folding waits until none is left.
 let queued = 0;
 let activeTask;
+let activeBudget;
 let shuttingDown = false;
 function enqueue(text, { interrupt = false, image = null, note = '', byVoice = false, readOnly = false } = {}) {
   if (shuttingDown) return Promise.resolve();
@@ -866,6 +871,9 @@ async function prompt(text, image = null, note = '', byVoice = false, taskId) {
   if (!intro && !text.startsWith('(')) activity.asked(text);
   menu();
   controller = new AbortController();
+  const budgetController = controller;
+  const budget = new TaskBudgetService(() => budgetController.abort());
+  activeBudget = budget;
   agent.setSignal(controller.signal);
   ui({ kind: 'agent', e: { type: 'start' } });
   // Voice: the socket opens now, while the model thinks; sentences are spoken as soon as each is ready.
@@ -931,6 +939,8 @@ async function prompt(text, image = null, note = '', byVoice = false, taskId) {
         const seen = (u.inputTokens ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
         if (seen) lastInput = { session: session?.id, tokens: seen, measured: true };
         use.calls++; use.in += u.inputTokens ?? 0; use.cacheRead += u.cacheRead ?? 0; use.cacheWrite += u.cacheWrite ?? 0; use.out += u.outputTokens ?? 0;
+        budget.observeUsage(e.usage);
+        await taskRuns.updateBudget(taskId, budget.snapshot());
         if (process.env.ROAMIES_USAGE) console.error(`[usage] in=${u.inputTokens ?? '?'} cacheRead=${u.cacheRead ?? 0} cacheWrite=${u.cacheWrite ?? 0} out=${u.outputTokens ?? '?'}`);
       }
       else if (e.type === 'thinking_delta') ui({ kind: 'agent', e: { type: 'thinking', text: e.text } });
@@ -963,6 +973,7 @@ async function prompt(text, image = null, note = '', byVoice = false, taskId) {
       else if (e.type === 'server_tool_result') { ui({ kind: 'agent', e: { type: 'tool_end', id: e.toolUseId ?? e.id, isError: false } }); activity.end(e.toolUseId ?? e.id, false); panel(); }
       else if (e.type === 'error') throw e.error;
     }
+    budget.check();
     doneWriting();
     { const t = echo.flush(); reply.push(t); lastReply += t; }
     reply.finish();
@@ -976,21 +987,25 @@ async function prompt(text, image = null, note = '', byVoice = false, taskId) {
     // Asked by voice and answered with a question: the overlay opens the mic once the reply has been typed and said.
     const listen = byVoice && !stalled && !controller.signal.aborted && autoListenOn() && endsWithQuestion(lastReply) ? { turn, speech: voice?.id ?? null } : null;
     autoTurn = listen ? turn : null;
-    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'returned');
+    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'returned', budget.snapshot());
     ui({ kind: 'agent', e: stalled ? { type: 'error', message: stallMessage(), speech: voice?.id ?? null } : { type: 'done', speech: voice?.id ?? null, ...(listen ? { listen } : {}) } });
     logUsage({ ...use, ms: Date.now() - use.t });
     logLine('request_done', { turn, ms: Date.now() - use.t, calls: use.calls, tools: use.tools, in: use.in, cacheRead: use.cacheRead, cacheWrite: use.cacheWrite, out: use.out });
   } catch (err) {
-    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'failed').catch(() => {});
+    const budgetReason = budget.snapshot().stoppedReason;
+    if (budgetReason) err = new TaskBudgetError(budgetReason);
+    await taskRuns.finish(taskId, controller.signal.aborted ? 'interrupted' : 'failed', budget.snapshot()).catch(() => {});
     lastFailed = true;
     if (controller.signal.aborted) voice?.abort(); else { spoken?.flush(); voice?.end(); }
     if (controller.signal.aborted && quiet) ui({ kind: 'agent', e: { type: 'done' } });
     else {
-      const msg = err instanceof TaskRunError ? err.message : stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
+      const msg = err instanceof TaskRunError || err instanceof TaskBudgetError ? err.message : stalled ? stallMessage() : controller.signal.aborted ? 'Okay, stopping.' : aloud(problem('reply', err, { who: PROVIDER_LABELS[config.provider] }));
       console.error('prompt failed', err);
       ui({ kind: 'agent', e: { type: 'error', message: msg, speech: voice?.id ?? null } });
     }
   } finally {
+    budget.close();
+    if (activeBudget === budget) activeBudget = undefined;
     watch?.stop();
     busy = false; turnVoice = null;
     // A tool cut off by Stop never reports back: end its tag too, or the Sidekick kept showing it ("looking at
