@@ -5,6 +5,7 @@
 // in:  {type:'menu', id} {type:'answer', id, text} {type:'ui_ready'}
 // out: {type:'menu', items} {type:'ui', msg} {type:'overlays', ids}
 import { Agent } from '@kenkaiiii/gg-agent';
+import { z } from 'zod';
 import { ClaudeCodeAgent, closeSpare } from './claudecode.mjs';
 import { SAFE, checkDrawAction, checkLink, redactArgs, isYes } from './safety.mjs';
 import { agentEvents, stallWatch } from './agentstream.mjs';
@@ -1290,6 +1291,7 @@ function menu() {
     { id: 'status', label: status, enabled: false },
     { sep: true },
     { id: 'panel', label: 'Open Panel…' },
+    { id: 'session_center', label: 'מרכז הסשנים — חלון עבודה' },
     { id: 'show', label: `Show ${lookName()}`, ...(HOTKEYS_OK ? { accel: keys().summon } : {}) },
     { id: 'ask', label: `Ask ${lookName()}…`, enabled: !busy },
     ...(SNAP_OK ? [{ id: 'snap', label: 'Ask About an Area…', accel: keys().snap }] : []),
@@ -1306,7 +1308,7 @@ function menu() {
 // ---------- panel ----------
 // The panel that opens from the menu bar or tray icon: what's going on, memory and settings. It asks for the
 // state when it opens and gets it again after each change, at most once per tick, only while it's open.
-let panelOpen = false, panelQueued = false, panelAt = 0;
+let panelOpen = false, sessionCenterOpen = false, panelQueued = false, panelAt = 0;
 let wakeProblem = null;
 const claudeSessions = new ClaudeSessionsService();
 let claudeApprovalQueue = Promise.resolve();
@@ -1328,9 +1330,10 @@ await claudeRuns.initialize().catch((error) => { claudeRecoveryError = error.mes
 const claudeControlTools = createClaudeControlTools({ runs: claudeRuns, sessions: claudeSessions,
   allowActions: () => config.allowActions, readOnly: () => recipeReadOnly, confirm: confirmClaudeControl });
 tools.push(...claudeControlTools);
+tools.push({ name: 'show_session_center', description: 'Open the live Claude session center in a persistent work window. Shows owned runs, saved progress and local Claude history. Use when asked to show sessions or a work dashboard.', parameters: z.object({}), execute: async () => { send({ type: 'session_center_show' }); return 'מרכז הסשנים נפתח בחלון עבודה. סשן שהחיבור אליו נקטע דורש המשך מפורש.'; } });
 let lastClaudeRuns = '';
 setInterval(() => {
-  if (!panelOpen) return;
+  if (!panelOpen && !sessionCenterOpen) return;
   const next = JSON.stringify(claudeRuns.list());
   if (next !== lastClaudeRuns) { lastClaudeRuns = next; panel(); }
 }, 1500).unref();
@@ -1353,11 +1356,18 @@ const workspace = new WorkspaceController(claudeSessions, () => panel(), new Cla
 workspace.initialize().then(() => workspace.poll());
 setInterval(() => workspace.poll(), 30_000).unref();
 function panel() {
-  if (!panelOpen || panelQueued) return;
+  if ((!panelOpen && !sessionCenterOpen) || panelQueued) return;
   panelQueued = true;
-  setImmediate(() => { panelQueued = false; if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } }); });
+  setImmediate(() => {
+    panelQueued = false;
+    if (panelOpen) send({ type: 'panel', msg: { kind: 'state', state: panelState() } });
+    if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'state', snapshot: { runs: claudeRuns.list(), sessions: workspace.snapshot().sessions, actions: !!config.allowActions, observedAt: Date.now(), error: claudeRecoveryError ?? workspace.snapshot().error } } });
+  });
 }
-const panelNote = (text, bad = false, p = null) => panelOpen && send({ type: 'panel', msg: { kind: 'note', text, bad, ...(p ? linked(p) : {}) } });
+const panelNote = (text, bad = false, p = null) => {
+  if (panelOpen) send({ type: 'panel', msg: { kind: 'note', text, bad, ...(p ? linked(p) : {}) } });
+  if (sessionCenterOpen) send({ type: 'session_center', msg: { kind: 'note', text, bad } });
+};
 function panelState() {
   const current = getModel(config.model);
   const doing = activity.doing();
@@ -1543,6 +1553,7 @@ async function onMenu(id) {
     say('Fresh start. What are we doing?', 'happy');
   } else if (id.startsWith('forget:')) { await forgetFact(id.slice(7)); menu(); }
   else if (id === 'panel') send({ type: 'panel_show' });
+  else if (id === 'session_center') send({ type: 'session_center_show' });
   else if (id === 'quit') send({ type: 'quit' });
   // The panel asks first in its own words, so this one doesn't ask again.
   else if (id === 'forgetall:yes') { const n = await clearFacts(); menu(); panelNote(`Forgot ${n} thing${n === 1 ? '' : 's'}.`); }
@@ -1827,13 +1838,18 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   let m;
   try { m = JSON.parse(line); } catch { return; }
   if (m.type === 'menu') onMenu(m.id).catch((e) => console.error('menu', e));
+  else if (m.type === 'session_center_open') { sessionCenterOpen = true; panel(); workspace.poll(); }
+  else if (m.type === 'session_center_closed') sessionCenterOpen = false;
   else if (m.type === 'workspace') {
+    const receipt = (error, cancelled = false) => {
+      if (typeof m.clientRequestId === 'string' && /^[a-f0-9-]{36}$/i.test(m.clientRequestId)) send({ type: 'session_center', msg: { kind: 'action_result', requestId: m.clientRequestId, ...(error ? { error } : {}), cancelled } });
+    };
     if (typeof m.action === 'string' && m.action.startsWith('claude_control_')) {
       const tool = claudeControlTools.find((candidate) => candidate.name === m.action);
-      if (tool) tool.execute(m).then(() => panel()).catch((error) => panelNote(error.message || 'ניהול השיחה נכשל.', true));
+      if (tool) tool.execute(m).then((result) => { receipt(undefined, JSON.parse(result).cancelled === true); panel(); }).catch((error) => { receipt(error.message || 'ניהול השיחה נכשל.'); panelNote(error.message || 'ניהול השיחה נכשל.', true); });
     }
     else if(m.action==='sessions.fork'&&(!config.allowActions||busy))panelNote('ליצירת עותק יש להפעיל פעולות בהגדרות ולסיים את הפעולה הנוכחית.',true);
-    else workspace.handle(m).catch(() => panelNote('הפעולה לא הושלמה.', true));
+    else workspace.handle(m).then(() => receipt()).catch(() => { receipt('הפעולה לא הושלמה.'); panelNote('הפעולה לא הושלמה.', true); });
   }
   else if (m.type === 'panel_open') { sonioxKeyLoaded.then(() => { if (panelOpen) panel(); }); panelOpen = true; panelAt = Date.now(); logLine('panel_open', {}); refreshAuth().catch(() => {}).finally(() => panel()); }
   else if (m.type === 'diagnostics') { shellInfo?.(m); shellInfo = null; }
